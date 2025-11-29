@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Camera Test</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📸 Firebase Camera Capture Test</h1>
+        <p class="subtitle">Test camera capture and Firestore storage</p>
+
+        <!-- Login Section -->
+        <div id="loginSection" class="login-section">
+            <h3>🔐 Login to Firebase</h3>
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="emailInput">Email:</label>
+                    <input type="email" id="emailInput" placeholder="staff@example.com" required />
+                </div>
+                <div class="form-group">
+                    <label for="passwordInput">Password:</label>
+                    <input type="password" id="passwordInput" placeholder="password123" required />
+                </div>
+                <button type="submit" id="loginBtn" class="login-btn">
+                    <span class="btn-icon">🔑</span>
+                    <span class="btn-text">Sign In</span>
+                </button>
+            </form>
+        </div>
+
+        <!-- Camera Preview Section -->
+        <div id="cameraSection" class="camera-section" style="display: none;">
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+        </div>
+
+        <!-- Control Button -->
+        <button id="captureBtn" class="capture-btn" style="display: none;">
+            <span class="btn-icon">📷</span>
+            <span class="btn-text">Capture</span>
+        </button>
+
+        <!-- Diagnostic Buttons -->
+        <div id="diagnosticSection" class="diagnostic-section" style="display: none;">
+            <h4>🔧 Connection Diagnostics</h4>
+            <div class="diagnostic-buttons">
+                <button id="testAuthBtn" class="diag-btn">
+                    <span>🔐</span> Test Auth
+                </button>
+                <button id="testFirestoreReadBtn" class="diag-btn">
+                    <span>📖</span> Test Read
+                </button>
+                <button id="testFirestoreWriteBtn" class="diag-btn">
+                    <span>✍️</span> Test Write
+                </button>
+                <button id="testSchoolsBtn" class="diag-btn">
+                    <span>🏫</span> Test Schools
+                </button>
+            </div>
+            <div id="diagnosticResults" class="diagnostic-results"></div>
+        </div>
+
+        <!-- Status Section -->
+        <div id="statusSection" class="status-section">
+            <div class="status-indicator">
+                <span id="statusIcon">⏳</span>
+                <span id="statusText">Ready to capture</span>
+            </div>
+            <p id="statusDetails" class="status-details"></p>
+        </div>
+
+        <!-- Display Section -->
+        <div id="displaySection" class="display-section" style="display: none;">
+            <h3>📥 Retrieved from Firestore</h3>
+            <div class="image-info">
+                <p><strong>Document ID:</strong> <span id="docId">-</span></p>
+                <p><strong>Staff ID:</strong> <span id="docStaffId">-</span></p>
+                <p><strong>Timestamp:</strong> <span id="docTimestamp">-</span></p>
+            </div>
+            <div class="image-container">
+                <img id="displayImage" alt="Captured image from Firestore" />
+            </div>
+            <button id="downloadBtn" class="download-btn">
+                📥 Download Image
+            </button>
+        </div>
+
+        <!-- Test Info -->
+        <div class="test-info">
+            <h4>🧪 Test Instructions</h4>
+            <ol>
+                <li>Allow camera access when prompted</li>
+                <li>Click "Capture" button to take a photo</li>
+                <li>Photo will be saved to Firestore <code>login-pictures</code> collection</li>
+                <li>Same photo will be retrieved and displayed below</li>
+                <li>Verify the image matches what you captured</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -6,12 +6,20 @@
 //
 
 import SwiftUI
+import FirebaseCore
 
 @main
 struct FaceRecognitionClientApp: App {
+    
+    init() {
+        // Configure Firebase
+        FirebaseApp.configure()
+        print("✅ Firebase configured successfully")
+    }
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            LoginView()
         }
     }
 }

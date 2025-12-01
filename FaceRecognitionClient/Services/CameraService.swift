@@ -273,7 +273,9 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
         
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
         
-        let image = UIImage(cgImage: cgImage)
+        // Fix rotation: front camera is mirrored and rotated
+        // Apply correct orientation for front-facing camera (portrait mode)
+        let image = UIImage(cgImage: cgImage, scale: 1.0, orientation: .upMirrored)
         
         DispatchQueue.main.async {
             self.onFrameCapture?(image)

@@ -229,6 +229,134 @@ class FirebaseService: ObservableObject {
         return data
     }
     
+    // MARK: - Face Data Download
+    
+    /// Download face data from Firestore faceData collection
+    /// Filters out invalid encodings (empty, placeholder, no landmarks)
+    func downloadFaceData(schoolId: String, progressHandler: ((Int, Int) -> Void)? = nil) async throws -> [FaceDataDocument] {
+        print("📥 Starting face data download for school: \(schoolId)")
+        
+        // Step 1: Get all face data documents
+        let querySnapshot = try await db
+            .collection("schools").document(schoolId)
+            .collection("faceData")
+            .order(by: "studentId")
+            .getDocuments()
+        
+        let totalDocs = querySnapshot.documents.count
+        print("📊 Found \(totalDocs) face data documents")
+        
+        var faceDataList: [FaceDataDocument] = []
+        var processedCount = 0
+        var skippedCount = 0
+        
+        for document in querySnapshot.documents {
+            processedCount += 1
+            progressHandler?(processedCount, totalDocs)
+            
+            let data = document.data()
+            
+            // Extract required fields
+            guard let faceDataId = data["faceDataId"] as? String,
+                  let studentId = data["studentId"] as? String,
+                  let studentDocId = data["studentDocId"] as? String,
+                  let studentName = data["studentName"] as? String,
+                  let encoding = data["encoding"] as? String else {
+                skippedCount += 1
+                continue
+            }
+            
+            // Validate encoding - skip invalid ones
+            guard isValidEncoding(encoding) else {
+                skippedCount += 1
+                print("⏭️ Skipping invalid encoding for \(studentName): \(encoding.prefix(30))...")
+                continue
+            }
+            
+            // Parse optional fields
+            let className = data["className"] as? String
+            let parentId = data["parentId"] as? String
+            let sampleIndex = data["sampleIndex"] as? Int ?? 0
+            let faceConfidence = data["faceConfidence"] as? Double ?? 0.0
+            let version = data["version"] as? Int ?? 1
+            let isOrphaned = data["isOrphaned"] as? Bool ?? false
+            
+            // Parse dates
+            let createdAt = parseFirestoreDate(data["createdAt"]) ?? ""
+            let updatedAt = parseFirestoreDate(data["updatedAt"]) ?? ""
+            
+            // Skip orphaned records
+            if isOrphaned {
+                skippedCount += 1
+                continue
+            }
+            
+            let faceData = FaceDataDocument(
+                faceDataId: faceDataId,
+                studentId: studentId,
+                studentDocId: studentDocId,
+                studentName: studentName,
+                className: className,
+                parentId: parentId,
+                sampleIndex: sampleIndex,
+                encoding: encoding,
+                faceConfidence: faceConfidence,
+                version: version,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                isOrphaned: isOrphaned
+            )
+            
+            faceDataList.append(faceData)
+        }
+        
+        print("✅ Downloaded \(faceDataList.count) valid face records (skipped \(skippedCount))")
+        return faceDataList
+    }
+    
+    /// Get face data version metadata
+    func getFaceDataVersion(schoolId: String) async throws -> Int {
+        let docRef = db.collection("schools").document(schoolId)
+            .collection("faceDataMeta").document("version")
+        
+        let snapshot = try await docRef.getDocument()
+        
+        guard snapshot.exists,
+              let data = snapshot.data(),
+              let version = data["currentVersion"] as? Int else {
+            return 0
+        }
+        
+        return version
+    }
+    
+    // MARK: - Validation Helpers
+    
+    private func isValidEncoding(_ encoding: String) -> Bool {
+        // Skip empty
+        guard !encoding.isEmpty else { return false }
+        
+        // Skip placeholder encodings (e.g., "encoded_1764572452696_3")
+        guard !encoding.hasPrefix("encoded_") else { return false }
+        
+        // Must contain landmarks
+        guard encoding.contains("landmarks") else { return false }
+        
+        return true
+    }
+    
+    private func parseFirestoreDate(_ value: Any?) -> String? {
+        if let timestamp = value as? Timestamp {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.string(from: timestamp.dateValue())
+        }
+        if let dateString = value as? String {
+            return dateString
+        }
+        return nil
+    }
+    
     // MARK: - Helper Functions
     
     private func resizeImageToFitFirestore(image: UIImage, maxSizeKB: Int) -> UIImage {

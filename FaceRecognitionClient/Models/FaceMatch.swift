@@ -14,7 +14,7 @@ struct FaceMatchResult {
     let processingTime: TimeInterval
     
     var isValidMatch: Bool {
-        return confidence >= 0.7  // 70% threshold
+        return confidence >= SettingsService.shared.matchThreshold
     }
     
     var confidencePercentage: String {

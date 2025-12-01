@@ -69,11 +69,17 @@ class CameraViewModel: ObservableObject {
     @Published var isCameraStarted: Bool = false
     @Published var isSimulator: Bool = false
     @Published var savedImage: UIImage?
+    @Published var capturedImage: UIImage?  // Image being processed (shown during recognition)
     @Published var showImagePicker: Bool = false
     @Published var statusLog: [String] = []
+    @Published var cacheStatus: FaceDataCacheStatus = .empty
+    @Published var showResultPopup: Bool = false  // Show result popup after detection
+    @Published var isPaused: Bool = false          // Pause camera capture until user confirms
     
     private let firebaseService = FirebaseService.shared
     private let faceRecognitionService = FaceRecognitionService.shared
+    private let cacheService = FaceDataCacheService.shared
+    private let settingsService = SettingsService.shared
     let cameraService = CameraService()
     
     private var students: [Student] = []
@@ -89,15 +95,27 @@ class CameraViewModel: ObservableObject {
         self.staff = staff
         self.school = school
         
+        // Load cache status
+        await MainActor.run {
+            reloadCache()
+        }
+        
         do {
             students = try await firebaseService.loadStudents(schoolId: school.id)
             faceRecognitionService.loadStudentData(students)
             
             print("✅ Data loaded with \(students.count) students. Camera ready to start.")
+            print("📊 Cache status: \(cacheStatus.hasCache ? "\(cacheStatus.recordCount) records" : "empty")")
         } catch {
             errorMessage = error.localizedDescription
             print("❌ Failed to load students: \(error)")
         }
+    }
+    
+    func reloadCache() {
+        cacheService.reloadFromDisk()
+        cacheStatus = cacheService.getCacheStatus()
+        print("📊 Cache reloaded: \(cacheStatus.hasCache ? "\(cacheStatus.recordCount) records from \(cacheStatus.studentCount) students" : "empty")")
     }
     
     func manualStartCamera() async {
@@ -154,14 +172,30 @@ class CameraViewModel: ObservableObject {
     
     // MARK: - Face Recognition
     
+    // Store the latest frame from camera (for manual capture)
+    private var latestFrame: UIImage?
+    
     func processFrame(_ image: UIImage) {
-        // Throttle processing - only process every 30th frame (about once per second)
-        frameCounter += 1
-        guard frameCounter % 30 == 0 else { return }
-        
-        // Don't process if already processing
+        // Just store the latest frame - no auto-capture
+        // User will tap to capture manually
+        latestFrame = image
+    }
+    
+    /// User tapped screen to capture photo
+    func manualCapture() {
+        // Don't capture if paused or already processing
+        guard !isPaused else { return }
         guard !isProcessing else { return }
         guard status == .scanning || status == .faceDetected else { return }
+        
+        guard let image = latestFrame else {
+            print("⚠️ No frame available to capture")
+            return
+        }
+        
+        // Haptic feedback for capture
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
         
         Task {
             await performFaceRecognition(image)
@@ -172,96 +206,63 @@ class CameraViewModel: ObservableObject {
         isProcessing = true
         showFaceBox = true
         
+        // FIRST: Show the captured image immediately
+        await MainActor.run {
+            self.capturedImage = image
+            self.status = .faceDetected
+        }
+        
         // Clear previous logs
         await MainActor.run {
             statusLog.removeAll()
         }
         
+        await addLog("📸 Photo captured!")
+        
+        // Brief pause to let user see the captured image
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        await MainActor.run {
+            self.status = .processing
+        }
+        await addLog("🔍 Starting face recognition...")
+        
         do {
-            // Save the captured image to Firestore for testing
-            if let staffId = staff?.id, let schoolId = school?.id {
-                // Start timer
-                uploadStartTime = Date()
-                
-                // Step 1: Save to Firestore
-                status = .processing
-                await addLog("📤 Step 1: Starting image save...")
-                print("📤 Saving picture to Firestore...")
-                
-                await addLog("🔄 Converting image to JPEG format...")
-                let pictureId = try await firebaseService.saveLoginPicture(image: image, staffId: staffId, schoolId: schoolId)
-                await addLog("✅ Picture saved successfully")
-                await addLog("🆔 Document ID: \(pictureId)")
-                await addLog("📍 Path: /schools/\(schoolId)/login-pictures/\(pictureId)")
-                print("✅ Picture saved with ID: \(pictureId)")
-                
-                // Step 2: Retrieve from Firestore to verify
-                await addLog("📥 Step 2: Retrieving picture to verify...")
-                print("📥 Retrieving picture from Firestore to verify...")
-                let retrievedData = try await firebaseService.loadLoginPicture(pictureId: pictureId, schoolId: schoolId)
-                await addLog("✅ Document retrieved from Firestore")
-                
-                if let imageDataUri = retrievedData["imageData"] as? String {
-                    let dataLength = imageDataUri.count
-                    await addLog("✅ Image data found (\(dataLength) chars)")
-                    print("✅ Picture retrieved successfully! Data URI length: \(dataLength) characters")
-                    print("✅ Verification complete - Save and retrieve working!")
-                    print("📍 Path: /schools/\(schoolId)/login-pictures/\(pictureId)")
-                    
-                    // Convert data URI back to UIImage to display
-                    await addLog("🔄 Step 3: Converting to display format...")
-                    if let retrievedImage = dataURIToImage(imageDataUri) {
-                        await MainActor.run {
-                            self.savedImage = retrievedImage
-                        }
-                        await addLog("✅ Image ready to display")
-                        print("✅ Retrieved image converted and ready to display")
-                        
-                        // Calculate and display total processing time
-                        if let startTime = uploadStartTime {
-                            let elapsed = Date().timeIntervalSince(startTime)
-                            let formattedTime = String(format: "%.2f seconds", elapsed)
-                            await MainActor.run {
-                                self.processingTime = formattedTime
-                            }
-                            await addLog("⏱️ Total time: \(formattedTime)")
-                        }
-                        
-                        // Auto-hide image after 3 seconds
-                        Task {
-                            try? await Task.sleep(nanoseconds: 3_000_000_000)
-                            await MainActor.run {
-                                self.savedImage = nil
-                            }
-                        }
-                    }
-                    
-                    await addLog("🎉 All steps completed successfully!")
-                    // Show success briefly
-                    status = .success("Connection Verified")
-                    
-                    // For simulator/testing mode, stop here - don't run face recognition
-                    if isSimulator {
-                        try? await Task.sleep(nanoseconds: 3_000_000_000)
-                        await resetAfterDelay(seconds: 0.5)
-                        isProcessing = false
-                        return
-                    }
-                    
-                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-                } else {
-                    await addLog("❌ Error: imageData field missing")
-                    print("⚠️ Retrieved data but imageData field missing")
-                    status = .failed("Verification failed")
-                    await resetAfterDelay(seconds: 2.0)
-                    isProcessing = false
-                    return
-                }
-            }
+            // Start timer
+            uploadStartTime = Date()
             
-            // Only run face recognition on physical devices with real camera
-            if !isSimulator {
-                // Detect face in the image
+            // Run face recognition directly (no Firebase upload)
+            // Check if we have cache data
+            if cacheStatus.hasCache {
+                // Use local face matching
+                await addLog("🔍 Detecting face landmarks...")
+                let detectedEncoding = try await faceRecognitionService.detectFaceLandmarks(in: image)
+                await addLog("✅ Detected \(detectedEncoding.landmarks.count) landmarks")
+                
+                await addLog("🔄 Matching against \(cacheStatus.recordCount) cached samples...")
+                let threshold = settingsService.matchThreshold
+                await addLog("⚙️ Threshold: \(String(format: "%.0f%%", threshold * 100))")
+                
+                let matchResult = faceRecognitionService.matchFaceAgainstLocalCache(detectedEncoding)
+                
+                // Always show the best similarity score for debugging
+                await addLog("📊 Best score: \(matchResult.bestSimilarityPercentage)")
+                if let candidateName = matchResult.bestCandidateName {
+                    await addLog("👤 Best candidate: \(candidateName)")
+                }
+                
+                if let match = matchResult.match {
+                    await addLog("✅ Match: \(match.studentName) (\(match.similarityPercentage))")
+                    await handleLocalMatch(match)
+                } else {
+                    await addLog("❌ No match above threshold (\(matchResult.bestSimilarityPercentage) < \(String(format: "%.0f%%", threshold * 100)))")
+                    status = .failed("Face not recognized")
+                    // Show popup and pause for user confirmation
+                    await showResultAndPause()
+                }
+            } else {
+                // Fall back to cloud matching (legacy)
+                await addLog("⚠️ No local cache, using cloud matching...")
                 let match = try await faceRecognitionService.detectAndRecognizeFace(in: image)
                 
                 if match.isValidMatch {
@@ -271,7 +272,6 @@ class CameraViewModel: ObservableObject {
                     await resetAfterDelay(seconds: 2.0)
                 }
             }
-            
         } catch let error as FaceRecognitionError {
             // Show face detected status even if recognition fails (for testing)
             if error == .noMatch || error == .lowConfidence {
@@ -289,17 +289,25 @@ class CameraViewModel: ObservableObject {
                 await resetAfterDelay(seconds: 3.0)
             }
         } catch {
-            // Handle Firebase/Firestore errors
+            // Handle Firebase/Firestore errors and Vision framework errors
             let errorMsg = error.localizedDescription
             await addLog("❌ ERROR: \(errorMsg)")
             
+            // Check if it's a Vision framework simulator error
+            if errorMsg.contains("inference context") || errorMsg.contains("CoreML") || errorMsg.contains("ANE") {
+                await addLog("⚠️ Vision ML error in Simulator")
+                await addLog("💡 This is a known iOS Simulator limitation")
+                await addLog("💡 Face detection ML models may not work in Simulator")
+                await addLog("💡 Please test on a real device for full functionality")
+                status = .failed("Simulator ML limitation")
+            }
             // Check if it's a Firestore size error
-            if errorMsg.contains("longer than") || errorMsg.contains("1048487") {
+            else if errorMsg.contains("longer than") || errorMsg.contains("1048487") {
                 await addLog("💡 Image too large for Firestore (>1MB)")
                 await addLog("💡 Try using a smaller image")
                 status = .failed("Image too large")
             } else {
-                status = .failed("Upload failed")
+                status = .failed("Recognition failed")
             }
             
             await MainActor.run {
@@ -314,6 +322,75 @@ class CameraViewModel: ObservableObject {
     }
     
     // MARK: - Handle Match
+    
+    private func handleLocalMatch(_ match: LocalFaceMatchResult) async {
+        status = .success(match.studentName)
+        
+        // Update details
+        let dateFormatter = DateFormatter()
+        dateFormatter.timeStyle = .medium
+        lastCheckTime = dateFormatter.string(from: match.matchTimestamp)
+        studentName = "\(match.studentName) (\(match.similarityPercentage))"
+        
+        // Calculate processing time
+        if let startTime = uploadStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            processingTime = String(format: "%.2fs", elapsed)
+        }
+        
+        // Provide haptic feedback
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        
+        // Record attendance
+        if let schoolId = school?.id {
+            do {
+                try await firebaseService.recordAttendance(schoolId: schoolId, studentId: match.studentId)
+                await addLog("📝 Attendance recorded")
+                
+                // TODO: Send WhatsApp notification (to be implemented later)
+                // For now, just log that we would send it
+                await addLog("📱 WhatsApp notification pending...")
+                
+            } catch {
+                await addLog("⚠️ Failed to record attendance: \(error.localizedDescription)")
+                print("⚠️ Failed to record attendance: \(error)")
+            }
+        }
+        
+        // Show popup and pause for user confirmation (instead of auto-reset)
+        await showResultAndPause()
+    }
+    
+    /// Show result popup and pause camera until user confirms
+    private func showResultAndPause() async {
+        await MainActor.run {
+            isPaused = true
+            showResultPopup = true
+            isProcessing = false
+        }
+        
+        // Provide haptic feedback based on status
+        let generator = UINotificationFeedbackGenerator()
+        switch status {
+        case .success:
+            generator.notificationOccurred(.success)
+        case .failed:
+            generator.notificationOccurred(.error)
+        default:
+            break
+        }
+    }
+    
+    /// User confirmed result, resume camera capture
+    func confirmAndResume() {
+        showResultPopup = false
+        isPaused = false
+        capturedImage = nil  // Clear captured image
+        status = .scanning
+        showFaceBox = false
+        statusLog.removeAll()
+    }
     
     private func handleSuccessfulMatch(_ match: FaceMatchResult) async {
         status = .success(match.student.fullName)
@@ -347,8 +424,8 @@ class CameraViewModel: ObservableObject {
             }
         }
         
-        // Reset after 3 seconds
-        await resetAfterDelay(seconds: 3.0)
+        // Show popup and pause for user confirmation
+        await showResultAndPause()
     }
     
     // MARK: - WhatsApp Integration

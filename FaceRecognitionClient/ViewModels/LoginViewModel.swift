@@ -57,8 +57,8 @@ class LoginViewModel: ObservableObject {
             // Sign in with Firebase
             let staff = try await firebaseService.signIn(email: email, password: password)
             
-            // Load school data
-            let school = try await firebaseService.loadSchool(schoolId: staff.schoolId)
+            // Load school data using the SELECTED school code from dropdown
+            let school = try await firebaseService.loadSchool(schoolId: schoolCode)
             
             // Update last login time
             try await firebaseService.updateLastLogin(staffId: staff.id)
@@ -76,7 +76,7 @@ class LoginViewModel: ObservableObject {
             isAuthenticated = true
             isLoading = false
             
-            print("✅ Login successful: \(staff.displayName)")
+            print("✅ Login successful: \(staff.displayName) at \(school.name)")
             
         } catch {
             isLoading = false

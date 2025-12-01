@@ -15,6 +15,7 @@ struct CameraView: View {
     
     @StateObject private var viewModel = CameraViewModel()
     @State private var showLogoutAlert = false
+    @State private var showSettings = false
     
     var body: some View {
         ZStack {
@@ -37,18 +38,87 @@ struct CameraView: View {
                     
                     Spacer()
                     
-                    Text(staff.email)
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.8))
+                    // Cache status indicator
+                    if viewModel.cacheStatus.hasCache {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.crop.circle.badge.checkmark")
+                                .foregroundColor(.green)
+                            Text("\(viewModel.cacheStatus.studentCount)")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(6)
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("No Data")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.orange)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(6)
+                    }
+                    
+                    Spacer()
+                    
+                    // Settings button
+                    Button(action: {
+                        showSettings = true
+                    }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.title2)
+                            .padding(10)
+                            .background(Color.white.opacity(0.9))
+                            .foregroundColor(.blue)
+                            .clipShape(Circle())
+                    }
                 }
                 .padding()
                 .background(Color.black.opacity(0.5))
                 
                 // Camera Preview Area
                 ZStack {
-                    // Camera Preview or Placeholder
-                    if viewModel.isCameraReady, let previewLayer = viewModel.cameraService.getPreviewLayer() {
+                    // Show captured image during processing, otherwise show camera preview
+                    if let capturedImage = viewModel.capturedImage {
+                        // Show captured image while processing
+                        Image(uiImage: capturedImage)
+                            .resizable()
+                            .scaledToFill()
+                            .clipped()
+                    } else if viewModel.isCameraReady, let previewLayer = viewModel.cameraService.getPreviewLayer() {
+                        // Live camera preview
                         CameraPreviewView(previewLayer: previewLayer)
+                        
+                        // Capture button overlay
+                        VStack {
+                            Spacer()
+                            
+                            if viewModel.status == .scanning {
+                                // Big capture button at bottom
+                                Button {
+                                    viewModel.manualCapture()
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.white)
+                                            .frame(width: 80, height: 80)
+                                        Circle()
+                                            .stroke(Color.white, lineWidth: 4)
+                                            .frame(width: 90, height: 90)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.bottom, 30)
+                            }
+                        }
                     } else if viewModel.isCameraReady && viewModel.isSimulator {
                         // Simulator mode - show test UI with image display
                         ZStack {
@@ -294,6 +364,102 @@ struct CameraView: View {
                     }
                 }
             ))
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(schoolId: school.id, schoolName: school.name) {
+                // Reload cache when download completes
+                viewModel.reloadCache()
+            }
+        }
+        // Result popup overlay - pauses camera until user confirms
+        .overlay {
+            if viewModel.showResultPopup {
+                ResultPopupView(
+                    status: viewModel.status,
+                    studentName: viewModel.studentName,
+                    processingTime: viewModel.processingTime,
+                    onConfirm: {
+                        viewModel.confirmAndResume()
+                    }
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Result Popup View
+
+struct ResultPopupView: View {
+    let status: CameraStatus
+    let studentName: String
+    let processingTime: String
+    let onConfirm: () -> Void
+    
+    var body: some View {
+        ZStack {
+            // Semi-transparent background - tappable to dismiss
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onConfirm()
+                }
+            
+            // Popup card
+            VStack(spacing: 24) {
+                // Status icon
+                Image(systemName: status.icon)
+                    .font(.system(size: 80))
+                    .foregroundColor(status.color)
+                
+                // Title
+                Text(status.title)
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                
+                // Message
+                Text(status.message)
+                    .font(.headline)
+                    .foregroundColor(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                
+                // Details (for success)
+                if case .success = status {
+                    VStack(spacing: 8) {
+                        Text("Time: \(processingTime)")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                }
+                
+                // Confirm button - made more prominent and tappable
+                Button {
+                    onConfirm()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "camera.fill")
+                        Text("Next Capture")
+                            .fontWeight(.bold)
+                    }
+                    .font(.title3)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(status.color)
+                    .foregroundColor(.white)
+                    .cornerRadius(14)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+            }
+            .padding(30)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(UIColor.systemBackground).opacity(0.95))
+                    .shadow(color: status.color.opacity(0.5), radius: 20)
+            )
+            .padding(.horizontal, 30)
         }
     }
 }

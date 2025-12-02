@@ -13,7 +13,6 @@ class LoginViewModel: ObservableObject {
     @Published var schoolCode: String = ""
     @Published var email: String = ""
     @Published var password: String = ""
-    @Published var rememberMe: Bool = false
     
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
@@ -40,7 +39,6 @@ class LoginViewModel: ObservableObject {
         
         if let email = savedEmail {
             self.email = email
-            self.rememberMe = true
         }
     }
     
@@ -63,12 +61,8 @@ class LoginViewModel: ObservableObject {
             // Update last login time
             try await firebaseService.updateLastLogin(staffId: staff.id)
             
-            // Save credentials if remember me is checked
-            if rememberMe {
-                keychainService.saveCredentials(schoolCode: schoolCode, email: email)
-            } else {
-                keychainService.clearCredentials()
-            }
+            // Always save credentials (remember me is default behavior)
+            keychainService.saveCredentials(schoolCode: schoolCode, email: email)
             
             // Update state
             currentStaff = staff
@@ -76,7 +70,7 @@ class LoginViewModel: ObservableObject {
             isAuthenticated = true
             isLoading = false
             
-            print("✅ Login successful: \(staff.displayName) at \(school.name)")
+            print("✅ Login successful: \\(staff.displayName) at \\(school.name)")
             
         } catch {
             isLoading = false

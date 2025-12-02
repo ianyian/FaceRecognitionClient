@@ -16,24 +16,31 @@ struct CameraView: View {
     @StateObject private var viewModel = CameraViewModel()
     @State private var showLogoutAlert = false
     @State private var showSettings = false
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Top Bar
+                // Top Bar - glassmorphism style
                 HStack {
+                    // Logout button - subtle glass style
                     Button(action: {
                         showLogoutAlert = true
                     }) {
-                        Text("Logout")
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.9))
-                            .foregroundColor(.blue)
-                            .cornerRadius(8)
+                        HStack(spacing: 6) {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .font(.subheadline)
+                            Text("Logout")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .foregroundColor(.white)
+                        .cornerRadius(20)
                     }
                     
                     Spacer()
@@ -48,10 +55,10 @@ struct CameraView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(6)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(16)
                     } else {
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -61,62 +68,139 @@ struct CameraView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(.orange)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(6)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(16)
                     }
                     
                     Spacer()
                     
-                    // Settings button
+                    // Settings button - glass style
                     Button(action: {
                         showSettings = true
                     }) {
                         Image(systemName: "gearshape.fill")
-                            .font(.title2)
+                            .font(.title3)
                             .padding(10)
-                            .background(Color.white.opacity(0.9))
-                            .foregroundColor(.blue)
+                            .background(.ultraThinMaterial)
+                            .foregroundColor(.white)
                             .clipShape(Circle())
                     }
                 }
                 .padding()
-                .background(Color.black.opacity(0.5))
+                .background(Color.black.opacity(0.3))
                 
-                // Camera Preview Area
+                // Camera Preview Area - use layoutPriority to prevent it from stealing all space
                 ZStack {
                     // Show captured image during processing, otherwise show camera preview
                     if let capturedImage = viewModel.capturedImage {
-                        // Show captured image while processing
-                        Image(uiImage: capturedImage)
-                            .resizable()
-                            .scaledToFill()
-                            .clipped()
-                    } else if viewModel.isCameraReady, let previewLayer = viewModel.cameraService.getPreviewLayer() {
-                        // Live camera preview
-                        CameraPreviewView(previewLayer: previewLayer)
+                        // Show captured/frozen image - fit within bounds
+                        GeometryReader { geo in
+                            Image(uiImage: capturedImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
+                        }
                         
-                        // Capture button overlay
-                        VStack {
-                            Spacer()
-                            
-                            if viewModel.status == .scanning {
-                                // Big capture button at bottom
-                                Button {
-                                    viewModel.manualCapture()
-                                } label: {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color.white)
-                                            .frame(width: 80, height: 80)
-                                        Circle()
-                                            .stroke(Color.white, lineWidth: 4)
-                                            .frame(width: 90, height: 90)
+                        // Overlay showing comparison status
+                        if !viewModel.showResultPopup {
+                            VStack {
+                                // Top status indicator
+                                if viewModel.isComparing {
+                                    HStack(spacing: 10) {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        Text("Comparing...")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.white)
                                     }
+                                    .padding(.horizontal, 25)
+                                    .padding(.vertical, 12)
+                                    .background(Color.orange)
+                                    .cornerRadius(12)
+                                    .padding(.top, 20)
+                                } else {
+                                    Text("📸 Captured!")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 10)
+                                        .background(Color.green)
+                                        .cornerRadius(10)
+                                        .padding(.top, 20)
+                                }
+                                
+                                Spacer()
+                                
+                                // Cancel button (always available)
+                                Button {
+                                    viewModel.resumeFromTest()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "xmark")
+                                        Text("Cancel")
+                                            .fontWeight(.bold)
+                                    }
+                                    .font(.title3)
+                                    .padding(.horizontal, 40)
+                                    .padding(.vertical, 18)
+                                    .background(Color.gray.opacity(0.8))
+                                    .foregroundColor(.white)
+                                    .cornerRadius(14)
                                 }
                                 .buttonStyle(.plain)
-                                .padding(.bottom, 30)
+                                .padding(.bottom, 40)
+                            }
+                        }
+                    } else if viewModel.isCameraReady, let previewLayer = viewModel.cameraService.getPreviewLayer() {
+                        // Live camera preview - TAP ANYWHERE to capture
+                        CameraPreviewView(previewLayer: previewLayer)
+                        
+                        // Tap overlay for entire preview area
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                viewModel.testCapture()
+                            }
+                        
+                        // Instruction text - positioned in the CENTER of the camera view
+                        VStack {
+                            Spacer()
+                            Text("👆 Tap anywhere to capture")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(20)
+                            Spacer()
+                        }
+                        
+                        // Auto-lock countdown overlay (top-right corner)
+                        if viewModel.showAutoLockCountdown {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "lock.fill")
+                                            .font(.caption)
+                                        Text("Auto-lock")
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(.ultraThinMaterial)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(16)
+                                    .padding(.trailing, 8)
+                                    .padding(.top, 8)
+                                }
+                                Spacer()
                             }
                         }
                     } else if viewModel.isCameraReady && viewModel.isSimulator {
@@ -248,100 +332,119 @@ struct CameraView: View {
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .frame(maxHeight: .infinity)
+                .clipped()  // Prevent camera preview from overflowing
                 
-                // Status Area
+                // Bottom Status & Log Area - ALWAYS VISIBLE with fixed height
                 VStack(spacing: 0) {
-                    // Status Indicator
-                    HStack(spacing: 15) {
-                        Image(systemName: viewModel.status.icon)
-                            .font(.system(size: 40))
-                            .foregroundColor(viewModel.status.color)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(viewModel.status.title)
-                                .font(.title3)
-                                .fontWeight(.bold)
-                            
-                            Text(viewModel.status.message)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                    // Compact Status Bar with Lock Button
+                    HStack(spacing: 12) {
+                        // Status indicator - show "Screen Locked" when camera not started
+                        HStack(spacing: 8) {
+                            if viewModel.isCameraStarted {
+                                Image(systemName: viewModel.status.icon)
+                                    .font(.system(size: 20))
+                                    .foregroundColor(viewModel.status.color)
+                                
+                                Text(viewModel.status.title)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            } else {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.gray)
+                                
+                                Text("Screen Locked")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
                         }
                         
                         Spacer()
-                    }
-                    .padding(20)
-                    .background(viewModel.status.color.opacity(0.15))
-                    .cornerRadius(15)
-                    .padding()
-                    
-                    // Details
-                    VStack(spacing: 12) {
-                        DetailRow(label: "Last Check:", value: viewModel.lastCheckTime)
-                        DetailRow(label: "Student:", value: viewModel.studentName)
                         
-                        // Processing time with tiny font
-                        HStack {
-                            Text("Upload/Download Time:")
-                                .font(.system(size: 9))
-                                .foregroundColor(.white.opacity(0.9))
-                            Spacer()
-                            Text(viewModel.processingTime)
-                                .font(.system(size: 9))
-                                .fontWeight(.medium)
-                                .foregroundColor(.white)
+                        // Progress indicator when comparing
+                        if viewModel.isComparing {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .scaleEffect(0.8)
                         }
-                        .padding(.vertical, 4)
+                        
+                        // Manual Lock Button (only show when camera is active)
+                        if viewModel.isCameraReady && !viewModel.isComparing {
+                            Button(action: {
+                                viewModel.manualLock()
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "lock.fill")
+                                        .font(.caption)
+                                    Text("Lock")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.gray.opacity(0.2))
+                                .foregroundColor(.primary)
+                                .cornerRadius(16)
+                            }
+                        }
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
-                }
-                .background(Color(.systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
-                .shadow(color: .black.opacity(0.1), radius: 10, y: -5)
-            }
-            
-            // Status Log Display at bottom (always at bottom, non-blocking)
-            if !viewModel.statusLog.isEmpty {
-                VStack {
-                    Spacer()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(viewModel.isCameraStarted ? viewModel.status.color.opacity(0.15) : Color.gray.opacity(0.15))
+                    
+                    // Scrollable Activity Log (always visible, swipeable)
                     ScrollViewReader { proxy in
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 3) {
-                                ForEach(Array(viewModel.statusLog.enumerated()), id: \.offset) { index, log in
-                                    Text(log)
-                                        .font(.system(size: 10))
-                                        .foregroundColor(log.contains("❌") || log.contains("FAILED") || log.contains("ERROR") ? .red : .white)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.vertical, 1)
-                                        .id(index)
+                            VStack(alignment: .leading, spacing: 4) {
+                                if viewModel.statusLog.isEmpty {
+                                    Text("👆 Tap screen to capture photo")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .padding(.vertical, 20)
+                                } else {
+                                    ForEach(Array(viewModel.statusLog.enumerated()), id: \.offset) { index, log in
+                                        Text(log)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundColor(log.contains("❌") || log.contains("FAILED") || log.contains("ERROR") ? .red : 
+                                                           log.contains("✅") ? .green : .primary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.vertical, 2)
+                                            .id(index)
+                                    }
                                 }
                                 
-                                // Add spacer to ensure last item is fully visible
                                 Color.clear
-                                    .frame(height: 10)
+                                    .frame(height: 5)
                                     .id("bottom")
                             }
-                            .padding(10)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
                         }
-                        .frame(maxHeight: 150)
-                        .background(Color.black.opacity(0.85))
-                        .cornerRadius(10)
-                        .shadow(radius: 5)
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, 10)
+                        .frame(height: 120)
+                        .background(colorScheme == .dark ? Color(.systemBackground) : Color(.secondarySystemBackground))
                         .onChange(of: viewModel.statusLog.count) { _ in
-                            withAnimation(.easeOut(duration: 0.3)) {
+                            withAnimation(.easeOut(duration: 0.2)) {
                                 proxy.scrollTo("bottom", anchor: .bottom)
                             }
                         }
                     }
                 }
+                .frame(minHeight: 170)  // Ensure minimum height for status bar + log area
+                .fixedSize(horizontal: false, vertical: true)  // Respect the height
+                .background(colorScheme == .dark ? Color(.systemBackground) : Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.15), radius: 10, y: -5)
             }
         }
         .alert("Logout", isPresented: $showLogoutAlert) {
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {
+                // Ensure camera is in clean state after dismiss
+                viewModel.resumeFromTest()
+            }
             Button("Logout", role: .destructive) {
+                // Stop camera before logout to avoid slowdown
+                viewModel.stopCamera()
                 onLogout()
             }
         } message: {
@@ -378,8 +481,13 @@ struct CameraView: View {
                     status: viewModel.status,
                     studentName: viewModel.studentName,
                     processingTime: viewModel.processingTime,
+                    showAutoLockCountdown: viewModel.showPopupAutoLockCountdown,
+                    autoLockCountdown: viewModel.popupAutoLockCountdown,
                     onConfirm: {
                         viewModel.confirmAndResume()
+                    },
+                    onLock: {
+                        viewModel.manualLockFromPopup()
                     }
                 )
             }
@@ -393,7 +501,10 @@ struct ResultPopupView: View {
     let status: CameraStatus
     let studentName: String
     let processingTime: String
+    let showAutoLockCountdown: Bool
+    let autoLockCountdown: Int
     let onConfirm: () -> Void
+    let onLock: () -> Void
     
     var body: some View {
         ZStack {
@@ -452,6 +563,31 @@ struct ResultPopupView: View {
                 .contentShape(Rectangle())
                 .padding(.horizontal, 10)
                 .padding(.top, 10)
+                
+                // Screen-Lock button (same size as Next Capture, with countdown)
+                Button {
+                    onLock()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.fill")
+                        Text("Screen-Lock")
+                            .fontWeight(.bold)
+                        if showAutoLockCountdown {
+                            Text("(\(autoLockCountdown)s)")
+                                .font(.caption)
+                                .fontWeight(.regular)
+                        }
+                    }
+                    .font(.title3)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(Color.gray.opacity(0.6))
+                    .foregroundColor(.white)
+                    .cornerRadius(14)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .padding(.horizontal, 10)
             }
             .padding(30)
             .background(

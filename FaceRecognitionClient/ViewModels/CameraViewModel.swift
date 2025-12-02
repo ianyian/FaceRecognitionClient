@@ -49,8 +49,8 @@ enum CameraStatus: Equatable {
     
     var color: Color {
         switch self {
-        case .scanning: return .blue
-        case .faceDetected: return .blue
+        case .scanning: return .teal
+        case .faceDetected: return .cyan
         case .processing: return .orange
         case .success: return .green
         case .failed: return .red
@@ -89,6 +89,16 @@ class CameraViewModel: ObservableObject {
     private var frameCounter: Int = 0
     private var uploadStartTime: Date?
     
+    // Auto-lock timer
+    private var autoLockTimer: Timer?
+    private var autoLockCountdown: Int = 0
+    @Published var showAutoLockCountdown: Bool = false
+    
+    // Popup auto-lock timer (2x timeout)
+    private var popupAutoLockTimer: Timer?
+    @Published var popupAutoLockCountdown: Int = 0
+    @Published var showPopupAutoLockCountdown: Bool = false
+
     // MARK: - Lifecycle
     
     func loadData(staff: Staff, school: School) async {
@@ -121,13 +131,24 @@ class CameraViewModel: ObservableObject {
     func manualStartCamera() async {
         isCameraStarted = true
         
+        // Add initial log entry
+        await addLog("📷 Camera started")
+        await addLog("👆 Tap screen to capture a photo")
+        
         do {
             // Setup camera
             try await setupCamera()
             
             status = .scanning
+            await addLog("✅ Ready - \(cacheStatus.recordCount) face samples loaded")
             print("✅ Camera started with \(students.count) students")
+            
+            // Start auto-lock timer when camera starts
+            await MainActor.run {
+                startAutoLockTimer()
+            }
         } catch {
+            await addLog("❌ Camera error: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
             isCameraStarted = false
             print("❌ Failed to start camera: \(error)")
@@ -174,6 +195,7 @@ class CameraViewModel: ObservableObject {
     
     // Store the latest frame from camera (for manual capture)
     private var latestFrame: UIImage?
+    @Published var isComparing: Bool = false  // Shows comparison is in progress
     
     func processFrame(_ image: UIImage) {
         // Just store the latest frame - no auto-capture
@@ -181,12 +203,10 @@ class CameraViewModel: ObservableObject {
         latestFrame = image
     }
     
-    /// User tapped screen to capture photo
-    func manualCapture() {
-        // Don't capture if paused or already processing
-        guard !isPaused else { return }
-        guard !isProcessing else { return }
-        guard status == .scanning || status == .faceDetected else { return }
+    /// Capture and run face recognition (non-blocking)
+    func testCapture() {
+        // Cancel auto-lock timer when user interacts
+        cancelAutoLockTimer()
         
         guard let image = latestFrame else {
             print("⚠️ No frame available to capture")
@@ -194,12 +214,129 @@ class CameraViewModel: ObservableObject {
         }
         
         // Haptic feedback for capture
-        let generator = UIImpactFeedbackGenerator(style: .medium)
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
         
-        Task {
-            await performFaceRecognition(image)
+        print("📸 Image captured - starting comparison")
+        
+        // Immediately show the captured image
+        capturedImage = image
+        status = .faceDetected
+        isPaused = true
+        
+        // Add separator for new capture instead of clearing log
+        if !statusLog.isEmpty {
+            statusLog.append("─────────────────")
         }
+        
+        // Run face recognition in background (non-blocking)
+        Task.detached { [weak self] in
+            await self?.runFaceComparison(image)
+        }
+    }
+    
+    /// Run face comparison in background
+    private func runFaceComparison(_ image: UIImage) async {
+        await MainActor.run {
+            self.isComparing = true
+        }
+        await addLog("📸 Photo captured!")
+        await addLog("🔍 Starting face comparison...")
+        
+        // Start timer
+        let startTime = Date()
+        
+        do {
+            // Check if we have cache data
+            guard cacheStatus.hasCache else {
+                await addLog("⚠️ No face data cache available")
+                await addLog("💡 Go to Settings to download face data")
+                await MainActor.run {
+                    self.isComparing = false
+                    self.status = .failed("No face data")
+                    self.showPopupWithAutoLock()
+                }
+                return
+            }
+            
+            // Detect face landmarks
+            await addLog("🔍 Detecting face landmarks...")
+            let detectedEncoding = try await faceRecognitionService.detectFaceLandmarks(in: image)
+            await addLog("✅ Detected \(detectedEncoding.landmarks.count) landmarks")
+            
+            // Match against cache
+            await addLog("🔄 Matching against \(cacheStatus.recordCount) samples...")
+            let threshold = settingsService.matchThreshold
+            await addLog("⚙️ Threshold: \(String(format: "%.0f%%", threshold * 100))")
+            
+            let matchResult = faceRecognitionService.matchFaceAgainstLocalCache(detectedEncoding)
+            
+            // Calculate processing time
+            let elapsed = Date().timeIntervalSince(startTime)
+            let timeStr = String(format: "%.2fs", elapsed)
+            
+            // Show results
+            await addLog("📊 Best score: \(matchResult.bestSimilarityPercentage)")
+            if let candidateName = matchResult.bestCandidateName {
+                await addLog("👤 Best candidate: \(candidateName)")
+            }
+            await addLog("⏱️ Time: \(timeStr)")
+            
+            await MainActor.run {
+                self.processingTime = timeStr
+                self.isComparing = false
+                
+                if let match = matchResult.match {
+                    self.status = .success(match.studentName)
+                    self.studentName = "\(match.studentName) (\(match.similarityPercentage))"
+                } else {
+                    self.status = .failed("No match found")
+                }
+                self.showPopupWithAutoLock()
+            }
+            
+            // Haptic feedback for result
+            let feedbackGenerator = UINotificationFeedbackGenerator()
+            if matchResult.match != nil {
+                feedbackGenerator.notificationOccurred(.success)
+            } else {
+                feedbackGenerator.notificationOccurred(.error)
+            }
+            
+        } catch {
+            let errorMsg = error.localizedDescription
+            await addLog("❌ Error: \(errorMsg)")
+            
+            await MainActor.run {
+                self.isComparing = false
+                self.status = .failed(errorMsg)
+                self.showPopupWithAutoLock()
+            }
+            
+            let feedbackGenerator = UINotificationFeedbackGenerator()
+            feedbackGenerator.notificationOccurred(.error)
+        }
+    }
+    
+    /// Resume from capture - go back to camera
+    func resumeFromTest() {
+        capturedImage = nil
+        status = .scanning
+        isPaused = false
+        showResultPopup = false
+        isComparing = false
+        
+        // Ensure camera session is running
+        if isCameraReady {
+            cameraService.startSession()
+        }
+        
+        print("🔄 Resumed camera")
+    }
+    
+    /// User tapped screen to capture photo (legacy - redirects to testCapture)
+    func manualCapture() {
+        testCapture()
     }
     
     private func performFaceRecognition(_ image: UIImage) async {
@@ -365,9 +502,7 @@ class CameraViewModel: ObservableObject {
     /// Show result popup and pause camera until user confirms
     private func showResultAndPause() async {
         await MainActor.run {
-            isPaused = true
-            showResultPopup = true
-            isProcessing = false
+            showPopupWithAutoLock()
         }
         
         // Provide haptic feedback based on status
@@ -382,14 +517,203 @@ class CameraViewModel: ObservableObject {
         }
     }
     
+    /// Synchronous helper to show popup and start auto-lock timer (call from MainActor)
+    private func showPopupWithAutoLock() {
+        isPaused = true
+        showResultPopup = true
+        isProcessing = false
+        
+        // Start popup auto-lock timer (2x normal timeout)
+        startPopupAutoLockTimer()
+    }
+    
+    /// Start the popup auto-lock timer (2x the normal auto-lock timeout)
+    private func startPopupAutoLockTimer() {
+        cancelPopupAutoLockTimer()
+        
+        let timeout = settingsService.autoLockTimeout
+        guard timeout > 0 else {
+            showPopupAutoLockCountdown = false
+            return  // Disabled
+        }
+        
+        // Use 2x the normal timeout for popup
+        popupAutoLockCountdown = timeout * 2
+        showPopupAutoLockCountdown = true
+        
+        popupAutoLockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                self.popupAutoLockCountdown -= 1
+                
+                if self.popupAutoLockCountdown <= 0 {
+                    self.performPopupAutoLock()
+                }
+            }
+        }
+    }
+    
+    /// Cancel the popup auto-lock timer
+    private func cancelPopupAutoLockTimer() {
+        popupAutoLockTimer?.invalidate()
+        popupAutoLockTimer = nil
+        showPopupAutoLockCountdown = false
+    }
+    
+    /// Perform popup auto-lock - close popup and lock camera
+    private func performPopupAutoLock() {
+        cancelPopupAutoLockTimer()
+        
+        // Close popup
+        showResultPopup = false
+        isPaused = false
+        capturedImage = nil
+        showFaceBox = false
+        isComparing = false
+        
+        // Lock camera (same as manual lock)
+        stopCamera()
+        isCameraStarted = false
+        status = .scanning
+        
+        print("🔒 Popup auto-locked due to inactivity")
+    }
+    
     /// User confirmed result, resume camera capture
     func confirmAndResume() {
+        // Cancel popup auto-lock timer
+        cancelPopupAutoLockTimer()
+        
         showResultPopup = false
         isPaused = false
         capturedImage = nil  // Clear captured image
         status = .scanning
         showFaceBox = false
-        statusLog.removeAll()
+        isComparing = false
+        // Don't clear the log - keep history for review
+        // statusLog.removeAll()
+        
+        // Ensure camera session is running
+        if isCameraReady {
+            cameraService.startSession()
+        }
+        
+        print("🔄 Resumed camera from popup")
+        
+        // Start auto-lock timer if enabled
+        startAutoLockTimer()
+    }
+    
+    // MARK: - Auto Lock
+    
+    /// Start the auto-lock countdown timer
+    private func startAutoLockTimer() {
+        // Cancel any existing timer
+        cancelAutoLockTimer()
+        
+        let timeout = settingsService.autoLockTimeout
+        guard timeout > 0 else {
+            showAutoLockCountdown = false
+            return  // Disabled
+        }
+        
+        autoLockCountdown = timeout
+        showAutoLockCountdown = true
+        
+        autoLockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                self.autoLockCountdown -= 1
+                
+                if self.autoLockCountdown <= 0 {
+                    self.performAutoLock()
+                }
+            }
+        }
+    }
+    
+    /// Cancel the auto-lock timer (called when user taps to capture)
+    func cancelAutoLockTimer() {
+        autoLockTimer?.invalidate()
+        autoLockTimer = nil
+        showAutoLockCountdown = false
+    }
+    
+    /// Perform auto-lock - stop camera and return to start screen
+    private func performAutoLock() {
+        cancelAutoLockTimer()
+        
+        // Stop camera
+        stopCamera()
+        
+        // Reset to initial state (before camera started)
+        isCameraStarted = false
+        isCameraReady = false
+        capturedImage = nil
+        status = .scanning
+        
+        // Add log entry
+        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        statusLog.append("[\(timestamp)] 🔒 Auto-locked (idle timeout)")
+        
+        print("🔒 Auto-locked due to idle timeout")
+    }
+    
+    /// Manual lock - user initiated screen lock
+    func manualLock() {
+        cancelAutoLockTimer()
+        
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+        
+        // Stop camera
+        stopCamera()
+        
+        // Reset to initial state (before camera started)
+        isCameraStarted = false
+        isCameraReady = false
+        capturedImage = nil
+        status = .scanning
+        
+        // Add log entry
+        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        statusLog.append("[\(timestamp)] 🔒 Screen locked (manual)")
+        
+        print("🔒 Manual screen lock")
+    }
+    
+    /// Manual lock from popup - user wants to lock from result popup
+    func manualLockFromPopup() {
+        // Cancel popup auto-lock timer
+        cancelPopupAutoLockTimer()
+        
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+        
+        // Close popup and reset state
+        showResultPopup = false
+        isPaused = false
+        capturedImage = nil
+        showFaceBox = false
+        isComparing = false
+        
+        // Stop camera
+        stopCamera()
+        
+        // Reset to initial state (before camera started)
+        isCameraStarted = false
+        isCameraReady = false
+        status = .scanning
+        
+        // Add log entry
+        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        statusLog.append("[\(timestamp)] 🔒 Screen locked (manual)")
+        
+        print("🔒 Manual screen lock from popup")
     }
     
     private func handleSuccessfulMatch(_ match: FaceMatchResult) async {
@@ -547,8 +871,8 @@ class CameraViewModel: ObservableObject {
         let logMessage = "[\(timestamp)] \(message)"
         await MainActor.run {
             statusLog.append(logMessage)
-            // Keep only last 15 messages to show full flow
-            if statusLog.count > 15 {
+            // Keep last 50 messages to allow reviewing previous captures
+            if statusLog.count > 50 {
                 statusLog.removeFirst()
             }
         }

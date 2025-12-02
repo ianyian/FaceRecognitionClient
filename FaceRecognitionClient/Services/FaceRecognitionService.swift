@@ -414,8 +414,9 @@ class FaceRecognitionService {
         
         // Convert distance to similarity using exponential decay
         // Adjusted k value: smaller distances should give higher similarity
-        // k=8 gives: dist=0 → sim=1, dist=0.05 → sim=0.67, dist=0.1 → sim=0.45, dist=0.2 → sim=0.20
-        let k: Double = 8.0
+        // k=5 gives: dist=0 → sim=1, dist=0.05 → sim=0.78, dist=0.1 → sim=0.61, dist=0.2 → sim=0.37
+        // This is more lenient than k=8 and better for real-world face matching
+        let k: Double = 5.0
         let similarity = exp(-k * averageDistance)
         
         print("📊 Calculated similarity: \(String(format: "%.1f%%", similarity * 100))")

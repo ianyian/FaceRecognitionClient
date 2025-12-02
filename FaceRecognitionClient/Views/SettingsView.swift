@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Environment(\.colorScheme) var colorScheme
     
     @State private var matchThreshold: Double
+    @State private var autoLockTimeout: Int
     @State private var isDarkMode: Bool
     @State private var cacheStatus: FaceDataCacheStatus = .empty
     @State private var isDownloading = false
@@ -35,6 +36,7 @@ struct SettingsView: View {
         self.schoolName = schoolName
         self.onDownloadComplete = onDownloadComplete
         self._matchThreshold = State(initialValue: SettingsService.shared.matchThreshold)
+        self._autoLockTimeout = State(initialValue: SettingsService.shared.autoLockTimeout)
         self._isDarkMode = State(initialValue: UserDefaults.standard.integer(forKey: "appearanceMode") == 2)
     }
     
@@ -196,10 +198,10 @@ struct SettingsView: View {
                                 .foregroundColor(.blue)
                         }
                         
-                        Slider(value: $matchThreshold, in: 0.5...1.0, step: 0.05) {
+                        Slider(value: $matchThreshold, in: 0.4...1.0, step: 0.05) {
                             Text("Threshold")
                         } minimumValueLabel: {
-                            Text("50%")
+                            Text("40%")
                                 .font(.caption2)
                         } maximumValueLabel: {
                             Text("100%")
@@ -212,7 +214,7 @@ struct SettingsView: View {
                     
                     // Quick presets
                     HStack(spacing: 12) {
-                        ForEach([0.60, 0.75, 0.85, 0.95], id: \.self) { preset in
+                        ForEach([0.50, 0.60, 0.75, 0.90], id: \.self) { preset in
                             Button(action: {
                                 matchThreshold = preset
                                 settingsService.matchThreshold = preset
@@ -233,7 +235,23 @@ struct SettingsView: View {
                 } header: {
                     Text("Recognition Settings")
                 } footer: {
-                    Text("Higher threshold = more strict matching (fewer false positives). Lower threshold = more lenient (may match wrong person). Default: 75%")
+                    Text("Higher threshold = more strict matching (fewer false positives). Lower threshold = more lenient (may match wrong person). Default: 60%")
+                }
+                
+                // MARK: - Auto Lock Section
+                Section {
+                    Picker("Auto-lock Timer", selection: $autoLockTimeout) {
+                        ForEach(SettingsService.autoLockOptions, id: \.value) { option in
+                            Text(option.label).tag(option.value)
+                        }
+                    }
+                    .onChange(of: autoLockTimeout) { oldValue, newValue in
+                        settingsService.autoLockTimeout = newValue
+                    }
+                } header: {
+                    Text("Camera")
+                } footer: {
+                    Text("Automatically lock the camera after this duration of inactivity. Saves battery when no one is scanning. Tap 'Start Camera' to resume.")
                 }
                 
                 // MARK: - Appearance Section

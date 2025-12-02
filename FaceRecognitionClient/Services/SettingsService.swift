@@ -18,21 +18,22 @@ class SettingsService {
         static let matchThreshold = "face_match_threshold"
         static let schoolId = "school_id"
         static let autoDownloadOnLogin = "auto_download_on_login"
+        static let autoLockTimeout = "auto_lock_timeout"
     }
     
     // MARK: - Match Threshold
     
     /// Face match similarity threshold (0.0 - 1.0)
-    /// Default: 0.75 (75%)
+    /// Default: 0.60 (60%)
     var matchThreshold: Double {
         get {
             let value = defaults.double(forKey: Keys.matchThreshold)
             // Return default if not set (0.0 means not set)
-            return value > 0 ? value : 0.75
+            return value > 0 ? value : 0.60
         }
         set {
-            // Clamp value between 0.5 and 1.0
-            let clampedValue = min(max(newValue, 0.5), 1.0)
+            // Clamp value between 0.4 and 1.0 (allow lower threshold)
+            let clampedValue = min(max(newValue, 0.4), 1.0)
             defaults.set(clampedValue, forKey: Keys.matchThreshold)
             print("⚙️ Match threshold set to: \(String(format: "%.0f%%", clampedValue * 100))")
         }
@@ -71,11 +72,40 @@ class SettingsService {
         }
     }
     
+    // MARK: - Auto Lock
+    
+    /// Auto-lock timeout in seconds (0 = disabled)
+    /// Default: 5 seconds
+    var autoLockTimeout: Int {
+        get {
+            let value = defaults.integer(forKey: Keys.autoLockTimeout)
+            // Return default if not set (0 could be intentional "disabled")
+            if defaults.object(forKey: Keys.autoLockTimeout) == nil {
+                return 5  // Default 5 seconds
+            }
+            return value
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.autoLockTimeout)
+            print("⚙️ Auto-lock timeout set to: \(newValue) seconds")
+        }
+    }
+    
+    /// Auto-lock timeout options for UI
+    static let autoLockOptions: [(label: String, value: Int)] = [
+        ("Off", 0),
+        ("3 sec", 3),
+        ("5 sec", 5),
+        ("10 sec", 10),
+        ("30 sec", 30)
+    ]
+    
     // MARK: - Reset
     
     func resetToDefaults() {
         defaults.removeObject(forKey: Keys.matchThreshold)
         defaults.removeObject(forKey: Keys.autoDownloadOnLogin)
+        defaults.removeObject(forKey: Keys.autoLockTimeout)
         // Don't reset schoolId
         print("⚙️ Settings reset to defaults")
     }

@@ -22,6 +22,13 @@ class CameraService: NSObject, ObservableObject {
     private var currentDevice: AVCaptureDevice?
     private var isSimulator: Bool = false
     
+    // Reuse CIContext for performance (creating it is expensive)
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    
+    // Throttle frame capture to reduce main thread load
+    private var lastFrameTime: Date = .distantPast
+    private let minFrameInterval: TimeInterval = 0.1  // 10 fps is enough for manual capture
+    
     var onFrameCapture: ((UIImage) -> Void)?
     
     override init() {
@@ -57,6 +64,9 @@ class CameraService: NSObject, ObservableObject {
             throw NSError(domain: "CameraService", code: 1, 
                          userInfo: [NSLocalizedDescriptionKey: "Camera access not authorized"])
         }
+        
+        // Clear cached preview layer so it gets recreated with new session
+        previewLayer = nil
         
         // Simulator mode - skip real camera setup
         if isSimulator {
@@ -113,6 +123,16 @@ class CameraService: NSObject, ObservableObject {
         if session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
             self.videoOutput = videoOutput
+            
+            // Set video orientation to portrait
+            if let connection = videoOutput.connection(with: .video) {
+                if connection.isVideoRotationAngleSupported(90) {
+                    connection.videoRotationAngle = 90  // Portrait orientation
+                }
+                if connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = true  // Mirror for front camera
+                }
+            }
         }
         
         session.commitConfiguration()
@@ -189,8 +209,11 @@ class CameraService: NSObject, ObservableObject {
             return nil
         }
         
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspectFill
+        // Reuse existing preview layer if available
+        if previewLayer == nil {
+            previewLayer = AVCaptureVideoPreviewLayer(session: session)
+            previewLayer?.videoGravity = .resizeAspectFill
+        }
         
         return previewLayer
     }
@@ -265,20 +288,25 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
                       didOutput sampleBuffer: CMSampleBuffer,
                       from connection: AVCaptureConnection) {
+        // Throttle frame processing - we don't need 30fps for manual capture
+        let now = Date()
+        guard now.timeIntervalSince(lastFrameTime) >= minFrameInterval else { return }
+        lastFrameTime = now
+        
         // Convert sample buffer to UIImage for frame processing
         guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
         let ciImage = CIImage(cvPixelBuffer: imageBuffer)
-        let context = CIContext()
         
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+        // Use the shared CIContext (creating one per frame is very expensive!)
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
         
-        // Fix rotation: front camera is mirrored and rotated
-        // Apply correct orientation for front-facing camera (portrait mode)
-        let image = UIImage(cgImage: cgImage, scale: 1.0, orientation: .upMirrored)
+        // Create image with correct orientation (already rotated by connection settings)
+        let image = UIImage(cgImage: cgImage, scale: 1.0, orientation: .up)
         
-        DispatchQueue.main.async {
-            self.onFrameCapture?(image)
+        // Dispatch to main thread asynchronously
+        DispatchQueue.main.async { [weak self] in
+            self?.onFrameCapture?(image)
         }
     }
 }

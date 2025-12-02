@@ -97,14 +97,31 @@ class FaceRecognitionService {
         }
     }
     
+    // MARK: - Constants for MediaPipe compatibility
+    
+    /// Standard scale used by MediaPipe web app (512x512 normalized coordinate space)
+    private let mediaPipeScale: Double = 512.0
+    
     /// Convert Vision framework face observation to MediaPipe-compatible format
+    /// Coordinates are scaled to 512x512 pixel space to match web app format
     private func convertToMediaPipeEncoding(_ face: VNFaceObservation, imageSize: CGSize) -> MediaPipeFaceEncoding {
         var landmarks: [MediaPipeLandmark] = []
         
-        // Helper to convert normalized point to image coordinates
+        // Helper to convert Vision landmark point to MediaPipe 512x512 coordinate space
+        // Vision landmarks are normalized WITHIN the bounding box (0-1 range)
+        // MediaPipe coordinates are in 512x512 pixel space
         func convertPoint(_ point: CGPoint, boundingBox: CGRect) -> (x: Double, y: Double) {
-            let x = (boundingBox.origin.x + point.x * boundingBox.width) * imageSize.width
-            let y = (1 - boundingBox.origin.y - point.y * boundingBox.height) * imageSize.height
+            // Step 1: Convert from bounding box relative (0-1) to image relative (0-1)
+            // Vision bounding box origin is bottom-left, y increases upward
+            // Vision landmark points within bounding box: origin is also bottom-left
+            let imageRelativeX = boundingBox.origin.x + point.x * boundingBox.width
+            let imageRelativeY = boundingBox.origin.y + point.y * boundingBox.height
+            
+            // Step 2: Convert to MediaPipe coordinate system
+            // MediaPipe uses top-left origin, y increases downward, in 512x512 space
+            let x = imageRelativeX * mediaPipeScale
+            let y = (1.0 - imageRelativeY) * mediaPipeScale  // Flip Y axis
+            
             return (Double(x), Double(y))
         }
         
@@ -289,12 +306,12 @@ class FaceRecognitionService {
             }
         }
         
-        // Build bounding box points
+        // Build bounding box points in 512x512 coordinate space (matching web app)
         let boundingBoxPoints = [
-            MediaPipeBoundingBoxPoint(x: Double(bbox.origin.x * imageSize.width), y: Double((1 - bbox.origin.y - bbox.height) * imageSize.height)),
-            MediaPipeBoundingBoxPoint(x: Double((bbox.origin.x + bbox.width) * imageSize.width), y: Double((1 - bbox.origin.y - bbox.height) * imageSize.height)),
-            MediaPipeBoundingBoxPoint(x: Double((bbox.origin.x + bbox.width) * imageSize.width), y: Double((1 - bbox.origin.y) * imageSize.height)),
-            MediaPipeBoundingBoxPoint(x: Double(bbox.origin.x * imageSize.width), y: Double((1 - bbox.origin.y) * imageSize.height))
+            MediaPipeBoundingBoxPoint(x: Double(bbox.origin.x) * mediaPipeScale, y: Double(1 - bbox.origin.y - bbox.height) * mediaPipeScale),
+            MediaPipeBoundingBoxPoint(x: Double(bbox.origin.x + bbox.width) * mediaPipeScale, y: Double(1 - bbox.origin.y - bbox.height) * mediaPipeScale),
+            MediaPipeBoundingBoxPoint(x: Double(bbox.origin.x + bbox.width) * mediaPipeScale, y: Double(1 - bbox.origin.y) * mediaPipeScale),
+            MediaPipeBoundingBoxPoint(x: Double(bbox.origin.x) * mediaPipeScale, y: Double(1 - bbox.origin.y) * mediaPipeScale)
         ]
         
         let isoFormatter = ISO8601DateFormatter()
@@ -333,13 +350,29 @@ class FaceRecognitionService {
         
         print("🔍 Matching against \(mediaPipeRecords.count) MediaPipe face records with threshold \(String(format: "%.0f%%", threshold * 100))")
         
+        // Debug: Show first detected encoding sample
+        print("📸 Camera encoding: \(detectedEncoding.landmarks.count) landmarks, type=\(detectedEncoding.encoderType ?? "unknown")")
+        if let leftEye = detectedEncoding.landmarks.first(where: { $0.type == "LEFT_EYE" }) {
+            print("   LEFT_EYE: x=\(String(format: "%.1f", leftEye.x)), y=\(String(format: "%.1f", leftEye.y))")
+        }
+        
         var bestMatch: LocalFaceMatchResult?
         var highestSimilarity: Double = 0
         var bestCandidateName: String?
+        var isFirstRecord = true
         
         for faceData in mediaPipeRecords {
             guard let storedEncoding = faceData.parseMediaPipeEncoding() else {
                 continue
+            }
+            
+            // Debug: Show first stored encoding sample
+            if isFirstRecord {
+                print("💾 Stored encoding: \(storedEncoding.landmarks.count) landmarks, type=\(storedEncoding.encoderType ?? "unknown")")
+                if let leftEye = storedEncoding.landmarks.first(where: { $0.type == "LEFT_EYE" }) {
+                    print("   LEFT_EYE: x=\(String(format: "%.1f", leftEye.x)), y=\(String(format: "%.1f", leftEye.y))")
+                }
+                isFirstRecord = false
             }
             
             let similarity = calculateMediaPipeSimilarity(detectedEncoding, storedEncoding)
@@ -370,58 +403,140 @@ class FaceRecognitionService {
         }
     }
     
-    /// Calculate similarity between two MediaPipe face encodings using normalized landmark distances
-    /// Landmarks are normalized RELATIVE to bounding box (0-1 range within face)
+    /// Calculate similarity between two face encodings using FACIAL GEOMETRY RATIOS
+    /// This approach works across different landmark detectors (Vision vs MediaPipe)
+    /// because it compares relative proportions, not absolute positions
     private func calculateMediaPipeSimilarity(_ encoding1: MediaPipeFaceEncoding, _ encoding2: MediaPipeFaceEncoding) -> Double {
-        // Get bounding box info for both encodings
-        let bbox1 = getBoundingBoxRect(encoding1.boundingBox)
-        let bbox2 = getBoundingBoxRect(encoding2.boundingBox)
+        // Extract key facial measurements as ratios
+        let ratios1 = extractFacialRatios(encoding1)
+        let ratios2 = extractFacialRatios(encoding2)
         
-        guard bbox1.width > 0 && bbox1.height > 0 && bbox2.width > 0 && bbox2.height > 0 else {
-            print("⚠️ Invalid bounding box dimensions")
+        guard !ratios1.isEmpty && !ratios2.isEmpty else {
+            print("⚠️ Could not extract facial ratios")
             return 0
         }
         
-        var totalDistance: Double = 0
-        var matchingLandmarks = 0
+        // Compare common ratios
+        var totalDifference: Double = 0
+        var comparedRatios = 0
         
-        // Match landmarks by type and calculate normalized distances
-        for lm1 in encoding1.landmarks {
-            if let lm2 = encoding2.landmarks.first(where: { $0.type == lm1.type }) {
-                // Normalize coordinates RELATIVE to bounding box (0-1 range within face)
-                // This ensures we're comparing face GEOMETRY, not absolute positions
-                let x1Norm = (lm1.x - bbox1.minX) / bbox1.width
-                let y1Norm = (lm1.y - bbox1.minY) / bbox1.height
-                let x2Norm = (lm2.x - bbox2.minX) / bbox2.width
-                let y2Norm = (lm2.y - bbox2.minY) / bbox2.height
-                
-                // Calculate Euclidean distance in normalized space
-                let distance = sqrt(pow(x1Norm - x2Norm, 2) + pow(y1Norm - y2Norm, 2))
-                totalDistance += distance
-                matchingLandmarks += 1
+        for (name, value1) in ratios1 {
+            if let value2 = ratios2[name] {
+                // Percentage difference between ratios
+                let diff = abs(value1 - value2) / max(value1, value2, 0.001)
+                totalDifference += diff
+                comparedRatios += 1
+                print("   📐 \(name): \(String(format: "%.3f", value1)) vs \(String(format: "%.3f", value2)) (diff: \(String(format: "%.1f%%", diff * 100)))")
             }
         }
         
-        guard matchingLandmarks >= 10 else {
-            print("⚠️ Not enough matching landmarks: \(matchingLandmarks) (need at least 10)")
+        guard comparedRatios >= 3 else {
+            print("⚠️ Not enough comparable ratios: \(comparedRatios)")
             return 0
         }
         
-        let averageDistance = totalDistance / Double(matchingLandmarks)
+        let averageDifference = totalDifference / Double(comparedRatios)
         
-        // Log for debugging
-        print("📊 Matching \(matchingLandmarks) landmarks, avg distance: \(String(format: "%.4f", averageDistance))")
+        // Convert difference to similarity
+        // If ratios differ by 0% → 100% similar
+        // If ratios differ by 10% → 90% similar
+        // If ratios differ by 30% → 70% similar
+        let similarity = max(0, 1 - averageDifference)
         
-        // Convert distance to similarity using exponential decay
-        // Adjusted k value: smaller distances should give higher similarity
-        // k=5 gives: dist=0 → sim=1, dist=0.05 → sim=0.78, dist=0.1 → sim=0.61, dist=0.2 → sim=0.37
-        // This is more lenient than k=8 and better for real-world face matching
-        let k: Double = 5.0
-        let similarity = exp(-k * averageDistance)
-        
+        print("📊 Geometry matching: \(comparedRatios) ratios, avg difference: \(String(format: "%.1f%%", averageDifference * 100))")
         print("📊 Calculated similarity: \(String(format: "%.1f%%", similarity * 100))")
         
-        return min(max(similarity, 0), 1)
+        return similarity
+    }
+    
+    /// Extract facial geometry ratios that are invariant to position, scale, and detector type
+    private func extractFacialRatios(_ encoding: MediaPipeFaceEncoding) -> [String: Double] {
+        var ratios: [String: Double] = [:]
+        
+        // Get key landmarks
+        let leftEye = encoding.landmarks.first { $0.type == "LEFT_EYE" }
+        let rightEye = encoding.landmarks.first { $0.type == "RIGHT_EYE" }
+        let noseTip = encoding.landmarks.first { $0.type == "NOSE_TIP" }
+        let mouthLeft = encoding.landmarks.first { $0.type == "MOUTH_LEFT" }
+        let mouthRight = encoding.landmarks.first { $0.type == "MOUTH_RIGHT" }
+        let chin = encoding.landmarks.first { $0.type == "CHIN_GNATHION" }
+        let mouthCenter = encoding.landmarks.first { $0.type == "MOUTH_CENTER" }
+        let midpointEyes = encoding.landmarks.first { $0.type == "MIDPOINT_BETWEEN_EYES" }
+        let leftEyeLeftCorner = encoding.landmarks.first { $0.type == "LEFT_EYE_LEFT_CORNER" }
+        let leftEyeRightCorner = encoding.landmarks.first { $0.type == "LEFT_EYE_RIGHT_CORNER" }
+        let rightEyeLeftCorner = encoding.landmarks.first { $0.type == "RIGHT_EYE_LEFT_CORNER" }
+        let rightEyeRightCorner = encoding.landmarks.first { $0.type == "RIGHT_EYE_RIGHT_CORNER" }
+        let noseBottomCenter = encoding.landmarks.first { $0.type == "NOSE_BOTTOM_CENTER" }
+        
+        // Calculate inter-ocular distance (reference measurement)
+        guard let le = leftEye, let re = rightEye else {
+            return ratios
+        }
+        let eyeDistance = distance(le, re)
+        guard eyeDistance > 0 else { return ratios }
+        
+        // Ratio 1: Eye width to inter-ocular distance
+        if let lel = leftEyeLeftCorner, let ler = leftEyeRightCorner {
+            let leftEyeWidth = distance(lel, ler)
+            ratios["leftEyeWidth"] = leftEyeWidth / eyeDistance
+        }
+        if let rel = rightEyeLeftCorner, let rer = rightEyeRightCorner {
+            let rightEyeWidth = distance(rel, rer)
+            ratios["rightEyeWidth"] = rightEyeWidth / eyeDistance
+        }
+        
+        // Ratio 2: Nose to eye distance
+        if let nose = noseTip {
+            let noseToEyeMid = distance(nose, MediaPipeLandmark(type: "", x: (le.x + re.x)/2, y: (le.y + re.y)/2, z: 0))
+            ratios["noseToEyeRatio"] = noseToEyeMid / eyeDistance
+        }
+        if let noseBottom = noseBottomCenter {
+            let noseBottomToEyeMid = distance(noseBottom, MediaPipeLandmark(type: "", x: (le.x + re.x)/2, y: (le.y + re.y)/2, z: 0))
+            ratios["noseBottomToEyeRatio"] = noseBottomToEyeMid / eyeDistance
+        }
+        
+        // Ratio 3: Mouth width to inter-ocular distance
+        if let ml = mouthLeft, let mr = mouthRight {
+            let mouthWidth = distance(ml, mr)
+            ratios["mouthWidthRatio"] = mouthWidth / eyeDistance
+        }
+        
+        // Ratio 4: Chin to eye distance
+        if let c = chin {
+            let chinToEyeMid = distance(c, MediaPipeLandmark(type: "", x: (le.x + re.x)/2, y: (le.y + re.y)/2, z: 0))
+            ratios["chinToEyeRatio"] = chinToEyeMid / eyeDistance
+        }
+        
+        // Ratio 5: Mouth to nose vertical distance
+        if let mc = mouthCenter, let nose = noseTip {
+            let mouthToNose = abs(mc.y - nose.y)
+            ratios["mouthToNoseRatio"] = mouthToNose / eyeDistance
+        }
+        
+        // Ratio 6: Nose width (using nose bottom points if available)
+        let noseLeft = encoding.landmarks.first { $0.type == "NOSE_BOTTOM_LEFT" }
+        let noseRight = encoding.landmarks.first { $0.type == "NOSE_BOTTOM_RIGHT" }
+        if let nl = noseLeft, let nr = noseRight {
+            let noseWidth = distance(nl, nr)
+            ratios["noseWidthRatio"] = noseWidth / eyeDistance
+        }
+        
+        // Ratio 7: Face height to width (using chin and bounding box or eye-to-chin vs mouth width)
+        if let c = chin, let ml = mouthLeft, let mr = mouthRight {
+            let faceWidth = distance(ml, mr) * 1.5  // Approximate face width
+            let eyeY = (le.y + re.y) / 2
+            let faceHeight = abs(c.y - eyeY)
+            if faceWidth > 0 {
+                ratios["faceHeightToWidthRatio"] = faceHeight / faceWidth
+            }
+        }
+        
+        return ratios
+    }
+    
+    /// Calculate 2D distance between two landmarks
+    private func distance(_ lm1: MediaPipeLandmark, _ lm2: MediaPipeLandmark) -> Double {
+        return sqrt(pow(lm1.x - lm2.x, 2) + pow(lm1.y - lm2.y, 2))
     }
     
     /// Get bounding box as a rect with minX, minY, width, height

@@ -233,10 +233,15 @@ class FirebaseService: ObservableObject {
     
     /// Download face data from Firestore faceData collection
     /// Filters out invalid encodings (empty, placeholder, no landmarks)
+    /// Only includes face data for students with "Registered" status
     func downloadFaceData(schoolId: String, progressHandler: ((Int, Int) -> Void)? = nil) async throws -> [FaceDataDocument] {
         print("📥 Starting face data download for school: \(schoolId)")
         
-        // Step 1: Get all face data documents
+        // Step 1: Get all registered students first
+        let registeredStudentIds = try await getRegisteredStudentIds(schoolId: schoolId)
+        print("📋 Found \(registeredStudentIds.count) registered students")
+        
+        // Step 2: Get all face data documents
         let querySnapshot = try await db
             .collection("schools").document(schoolId)
             .collection("faceData")
@@ -249,6 +254,7 @@ class FirebaseService: ObservableObject {
         var faceDataList: [FaceDataDocument] = []
         var processedCount = 0
         var skippedCount = 0
+        var skippedNonRegistered = 0
         
         for document in querySnapshot.documents {
             processedCount += 1
@@ -263,6 +269,13 @@ class FirebaseService: ObservableObject {
                   let studentName = data["studentName"] as? String,
                   let encoding = data["encoding"] as? String else {
                 skippedCount += 1
+                continue
+            }
+            
+            // Skip face data for non-registered students
+            if !registeredStudentIds.contains(studentId) {
+                skippedNonRegistered += 1
+                print("⏭️ Skipping face data for non-registered student: \(studentName)")
                 continue
             }
             
@@ -310,8 +323,26 @@ class FirebaseService: ObservableObject {
             faceDataList.append(faceData)
         }
         
-        print("✅ Downloaded \(faceDataList.count) valid face records (skipped \(skippedCount))")
+        print("✅ Downloaded \(faceDataList.count) valid face records")
+        print("   ⏭️ Skipped \(skippedCount) invalid records")
+        print("   ⏭️ Skipped \(skippedNonRegistered) non-registered student records")
         return faceDataList
+    }
+    
+    /// Get IDs of all students with "Registered" status
+    private func getRegisteredStudentIds(schoolId: String) async throws -> Set<String> {
+        let querySnapshot = try await db
+            .collection("schools").document(schoolId)
+            .collection("students")
+            .whereField("status", isEqualTo: "Registered")
+            .getDocuments()
+        
+        var studentIds = Set<String>()
+        for document in querySnapshot.documents {
+            studentIds.insert(document.documentID)
+        }
+        
+        return studentIds
     }
     
     /// Get face data version metadata

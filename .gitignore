@@ -1,0 +1,41 @@
+# CocoaPods - Don't commit Pods folder (use pod install to restore)
+Pods/
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+build/
+*.xccheckout
+*.moved-aside
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+*.Trashes
+
+# IDE
+*.idea/
+*.vscode/
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# Crash logs
+*.ips
+*.crash
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace

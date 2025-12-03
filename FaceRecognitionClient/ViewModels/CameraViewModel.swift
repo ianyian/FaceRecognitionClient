@@ -262,7 +262,8 @@ class CameraViewModel: ObservableObject {
             // Detect face landmarks
             await addLog("🔍 Detecting face landmarks...")
             let detectedEncoding = try await faceRecognitionService.detectFaceLandmarks(in: image)
-            await addLog("✅ Detected \(detectedEncoding.landmarks.count) landmarks")
+            let totalLandmarks = detectedEncoding.allLandmarks?.count ?? 0
+            await addLog("✅ Detected \(detectedEncoding.landmarks.count) key + \(totalLandmarks) total landmarks")
             
             // Match against cache
             await addLog("🔄 Matching against \(cacheStatus.recordCount) samples...")
@@ -374,7 +375,8 @@ class CameraViewModel: ObservableObject {
                 // Use local face matching
                 await addLog("🔍 Detecting face landmarks...")
                 let detectedEncoding = try await faceRecognitionService.detectFaceLandmarks(in: image)
-                await addLog("✅ Detected \(detectedEncoding.landmarks.count) landmarks")
+                let totalLandmarks = detectedEncoding.allLandmarks?.count ?? 0
+                await addLog("✅ Detected \(detectedEncoding.landmarks.count) key + \(totalLandmarks) total landmarks")
                 
                 await addLog("🔄 Matching against \(cacheStatus.recordCount) cached samples...")
                 let threshold = settingsService.matchThreshold

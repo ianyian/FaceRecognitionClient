@@ -47,7 +47,14 @@ struct FaceDataDocument: Codable, Identifiable {
     func parseMediaPipeEncoding() -> MediaPipeFaceEncoding? {
         guard isMediaPipeFormat else { return nil }
         guard let data = encoding.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(MediaPipeFaceEncoding.self, from: data)
+        
+        do {
+            let decoded = try JSONDecoder().decode(MediaPipeFaceEncoding.self, from: data)
+            return decoded
+        } catch {
+            print("❌ Failed to parse MediaPipe encoding: \(error)")
+            return nil
+        }
     }
 }
 

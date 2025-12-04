@@ -3,6 +3,7 @@
 //  FaceRecognitionClient
 //
 //  Created on December 1, 2025.
+//  Updated December 4, 2025 - Added avatar display and memory monitor settings
 //
 
 import Foundation
@@ -19,6 +20,8 @@ class SettingsService {
         static let schoolId = "school_id"
         static let autoDownloadOnLogin = "auto_download_on_login"
         static let autoLockTimeout = "auto_lock_timeout"
+        static let showAvatarsInList = "show_avatars_in_list"
+        static let showMemoryMonitor = "show_memory_monitor"
     }
     
     // MARK: - Match Threshold
@@ -100,12 +103,44 @@ class SettingsService {
         ("30 sec", 30)
     ]
     
+    // MARK: - Avatar Display
+    
+    /// Whether to show avatars in student list (default OFF to save memory)
+    var showAvatarsInList: Bool {
+        get {
+            // Default false (off) - check if key exists
+            if defaults.object(forKey: Keys.showAvatarsInList) == nil {
+                return false
+            }
+            return defaults.bool(forKey: Keys.showAvatarsInList)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.showAvatarsInList)
+            print("⚙️ Show avatars in list: \(newValue)")
+        }
+    }
+    
+    // MARK: - Memory Monitor
+    
+    /// Whether to show persistent memory monitor overlay
+    var showMemoryMonitor: Bool {
+        get {
+            return defaults.bool(forKey: Keys.showMemoryMonitor)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.showMemoryMonitor)
+            print("⚙️ Show memory monitor: \(newValue)")
+        }
+    }
+    
     // MARK: - Reset
     
     func resetToDefaults() {
         defaults.removeObject(forKey: Keys.matchThreshold)
         defaults.removeObject(forKey: Keys.autoDownloadOnLogin)
         defaults.removeObject(forKey: Keys.autoLockTimeout)
+        defaults.removeObject(forKey: Keys.showAvatarsInList)
+        defaults.removeObject(forKey: Keys.showMemoryMonitor)
         // Don't reset schoolId
         print("⚙️ Settings reset to defaults")
     }

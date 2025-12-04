@@ -1,0 +1,744 @@
+/* ============================================
+   Student Management - iOS Style Draft
+   Designed for easy Swift/SwiftUI conversion
+   ============================================ */
+
+/* CSS Variables - maps to SwiftUI Color system */
+:root {
+    /* Primary Colors */
+    --color-primary: #007AFF;          /* Color.blue */
+    --color-secondary: #8E8E93;        /* Color.secondary */
+    --color-success: #34C759;          /* Color.green */
+    --color-danger: #FF3B30;           /* Color.red */
+    --color-warning: #FF9500;          /* Color.orange */
+    
+    /* Background Colors */
+    --color-bg-primary: #FFFFFF;       /* Color(.systemBackground) */
+    --color-bg-secondary: #F2F2F7;     /* Color(.secondarySystemBackground) */
+    --color-bg-tertiary: #E5E5EA;      /* Color(.tertiarySystemBackground) */
+    
+    /* Text Colors */
+    --color-text-primary: #000000;     /* Color.primary */
+    --color-text-secondary: #8E8E93;   /* Color.secondary */
+    --color-text-tertiary: #C7C7CC;    /* Color.tertiary */
+    
+    /* Spacing - maps to SwiftUI spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    
+    /* Border Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-bg-primary: #000000;
+        --color-bg-secondary: #1C1C1E;
+        --color-bg-tertiary: #2C2C2E;
+        --color-text-primary: #FFFFFF;
+        --color-text-secondary: #8E8E93;
+    }
+}
+
+/* Reset & Base */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Container */
+.container {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background-color: var(--color-bg-primary);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ============================================
+   Header - NavigationBar style
+   SwiftUI: .navigationBarItems()
+   ============================================ */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md);
+    background-color: var(--color-bg-primary);
+    border-bottom: 1px solid var(--color-bg-tertiary);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.header h1 {
+    font-size: 17px;
+    font-weight: 600;
+    flex: 1;
+    text-align: center;
+}
+
+.back-btn, .add-btn {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    font-size: 17px;
+    font-weight: 400;
+    cursor: pointer;
+    min-width: 60px;
+}
+
+.back-btn {
+    text-align: left;
+}
+
+.add-btn {
+    text-align: right;
+    font-weight: 500;
+}
+
+/* ============================================
+   Views - NavigationView style
+   ============================================ */
+.view {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+.view.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ============================================
+   Search Bar
+   SwiftUI: .searchable()
+   ============================================ */
+.search-container {
+    padding: var(--spacing-md);
+    background-color: var(--color-bg-secondary);
+}
+
+.search-input {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    padding-left: 36px;
+    background-color: var(--color-bg-tertiary);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 17px;
+    color: var(--color-text-primary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%238E8E93' viewBox='0 0 24 24' width='20' height='20'%3E%3Cpath d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 12px center;
+}
+
+.search-input::placeholder {
+    color: var(--color-text-secondary);
+}
+
+/* ============================================
+   Filter Tabs
+   SwiftUI: Picker with .segmented style
+   ============================================ */
+.filter-tabs {
+    display: flex;
+    padding: var(--spacing-sm) var(--spacing-md);
+    gap: var(--spacing-sm);
+    background-color: var(--color-bg-secondary);
+}
+
+.filter-tab {
+    flex: 1;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.filter-tab.active {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+/* ============================================
+   Student List
+   SwiftUI: List
+   ============================================ */
+.student-list {
+    flex: 1;
+    background-color: var(--color-bg-primary);
+}
+
+.loading {
+    text-align: center;
+    padding: var(--spacing-xl);
+    color: var(--color-text-secondary);
+}
+
+.student-item {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-bg-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.student-item:hover {
+    background-color: var(--color-bg-secondary);
+}
+
+.student-item:active {
+    background-color: var(--color-bg-tertiary);
+}
+
+.student-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 25px;
+    background-color: var(--color-bg-tertiary);
+    margin-right: var(--spacing-md);
+    object-fit: cover;
+}
+
+.student-info {
+    flex: 1;
+}
+
+.student-name {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+.student-class {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-top: 2px;
+}
+
+.student-status {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.student-status.registered {
+    background-color: rgba(52, 199, 89, 0.15);
+    color: var(--color-success);
+}
+
+.student-status.deleted {
+    background-color: rgba(255, 59, 48, 0.15);
+    color: var(--color-danger);
+}
+
+.student-chevron {
+    color: var(--color-text-tertiary);
+    font-size: 14px;
+    margin-left: var(--spacing-sm);
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: var(--spacing-xl);
+    color: var(--color-text-secondary);
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: var(--spacing-md);
+}
+
+/* ============================================
+   Form Styles
+   SwiftUI: Form
+   ============================================ */
+.student-form {
+    padding: var(--spacing-md);
+}
+
+.form-section {
+    background-color: var(--color-bg-primary);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.section-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: var(--spacing-xs);
+    color: var(--color-text-primary);
+}
+
+.section-desc {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-lg);
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-md);
+}
+
+.form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--spacing-xs);
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: var(--spacing-md);
+    background-color: var(--color-bg-secondary);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    font-size: 17px;
+    color: var(--color-text-primary);
+    transition: border-color 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    background-color: var(--color-bg-primary);
+}
+
+.form-group input::placeholder {
+    color: var(--color-text-tertiary);
+}
+
+.error-message {
+    display: block;
+    font-size: 12px;
+    color: var(--color-danger);
+    margin-top: var(--spacing-xs);
+    min-height: 16px;
+}
+
+/* ============================================
+   Camera Section
+   SwiftUI: Camera preview with AVCaptureSession
+   ============================================ */
+.camera-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background-color: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: var(--spacing-md);
+}
+
+.camera-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.camera-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    gap: var(--spacing-md);
+}
+
+.camera-overlay.hidden {
+    display: none;
+}
+
+.btn-capture {
+    width: 100%;
+    padding: var(--spacing-md);
+    background-color: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.btn-capture:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-capture:not(:disabled):hover {
+    opacity: 0.9;
+}
+
+/* Face Samples Grid */
+.samples-container {
+    margin-top: var(--spacing-lg);
+}
+
+.samples-grid h4 {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-sm);
+}
+
+.face-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-sm);
+}
+
+.face-sample {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.face-sample img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.face-sample .remove-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    background-color: var(--color-danger);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.face-sample:hover .remove-btn {
+    opacity: 1;
+}
+
+/* ============================================
+   Buttons
+   SwiftUI: Button with various styles
+   ============================================ */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 17px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background-color: var(--color-primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    opacity: 0.9;
+}
+
+.btn-secondary {
+    background-color: var(--color-bg-secondary);
+    color: var(--color-primary);
+}
+
+.btn-danger {
+    background-color: var(--color-danger);
+    color: white;
+}
+
+.btn-large {
+    width: 100%;
+    padding: var(--spacing-md);
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Spinner */
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Form Actions */
+.form-actions {
+    margin-top: var(--spacing-lg);
+}
+
+/* ============================================
+   Detail View
+   SwiftUI: Detail view in NavigationView
+   ============================================ */
+.detail-container {
+    padding: var(--spacing-md);
+}
+
+.detail-card {
+    background-color: var(--color-bg-primary);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.detail-grid {
+    display: grid;
+    gap: var(--spacing-md);
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.detail-label {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.detail-value {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+.detail-actions {
+    display: flex;
+    gap: var(--spacing-md);
+}
+
+.detail-actions .btn {
+    flex: 1;
+}
+
+.no-samples {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--color-text-secondary);
+    padding: var(--spacing-lg);
+}
+
+/* ============================================
+   Modal
+   SwiftUI: .alert() or .sheet()
+   ============================================ */
+.modal {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: var(--spacing-lg);
+}
+
+.modal-content {
+    background-color: var(--color-bg-primary);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg);
+    max-width: 320px;
+    width: 100%;
+    text-align: center;
+}
+
+.modal-content h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: var(--spacing-sm);
+}
+
+.modal-content p {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-lg);
+}
+
+.modal-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.modal-actions .btn {
+    flex: 1;
+}
+
+/* Image Modal */
+.image-modal {
+    max-width: 90vw;
+    max-height: 90vh;
+}
+
+.image-modal img {
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+}
+
+/* ============================================
+   Toast Notifications
+   SwiftUI: Custom toast overlay
+   ============================================ */
+.toast-container {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 20px) + 20px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.toast {
+    background-color: var(--color-bg-primary);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 280px;
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.toast.success {
+    border-left: 4px solid var(--color-success);
+}
+
+.toast.error {
+    border-left: 4px solid var(--color-danger);
+}
+
+.toast.warning {
+    border-left: 4px solid var(--color-warning);
+}
+
+.toast-icon {
+    font-size: 20px;
+}
+
+.toast-content {
+    flex: 1;
+}
+
+.toast-title {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.toast-message {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+/* ============================================
+   Responsive & Safe Area
+   ============================================ */
+@media (max-width: 480px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* iOS Safe Area Support */
+@supports (padding: env(safe-area-inset-top)) {
+    .header {
+        padding-top: calc(env(safe-area-inset-top) + var(--spacing-md));
+    }
+    
+    .view {
+        padding-bottom: calc(env(safe-area-inset-bottom) + var(--spacing-lg));
+    }
+}

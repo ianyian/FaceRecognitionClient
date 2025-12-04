@@ -16,6 +16,8 @@ struct CameraView: View {
     @StateObject private var viewModel = CameraViewModel()
     @State private var showLogoutAlert = false
     @State private var showSettings = false
+    @State private var showStudentManagement = false
+    @State private var showCachedStudents = false  // Show cached students list
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
@@ -45,20 +47,24 @@ struct CameraView: View {
                     
                     Spacer()
                     
-                    // Cache status indicator
+                    // Cache status indicator - CLICKABLE
                     if viewModel.cacheStatus.hasCache {
-                        HStack(spacing: 4) {
-                            Image(systemName: "person.crop.circle.badge.checkmark")
-                                .foregroundColor(.green)
-                            Text("\(viewModel.cacheStatus.studentCount)")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
+                        Button {
+                            showCachedStudents = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "person.crop.circle.badge.checkmark")
+                                    .foregroundColor(.green)
+                                Text("\(viewModel.cacheStatus.studentCount)")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(16)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(16)
                     } else {
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -75,6 +81,18 @@ struct CameraView: View {
                     }
                     
                     Spacer()
+                    
+                    // Students button - glass style
+                    Button(action: {
+                        showStudentManagement = true
+                    }) {
+                        Image(systemName: "person.2.fill")
+                            .font(.title3)
+                            .padding(10)
+                            .background(.ultraThinMaterial)
+                            .foregroundColor(.white)
+                            .clipShape(Circle())
+                    }
                     
                     // Settings button - glass style
                     Button(action: {
@@ -473,6 +491,19 @@ struct CameraView: View {
                 // Reload cache when download completes
                 viewModel.reloadCache()
             }
+        }
+        .fullScreenCover(isPresented: $showStudentManagement) {
+            StudentListView(school: school, onBack: {
+                showStudentManagement = false
+            })
+        }
+        .sheet(isPresented: $showCachedStudents) {
+            CachedStudentsView(
+                cacheStatus: viewModel.cacheStatus,
+                onDismiss: {
+                    showCachedStudents = false
+                }
+            )
         }
         // Result popup overlay - pauses camera until user confirms
         .overlay {

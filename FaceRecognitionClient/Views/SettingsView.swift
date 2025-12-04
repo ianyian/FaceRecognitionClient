@@ -3,6 +3,7 @@
 //  FaceRecognitionClient
 //
 //  Created on December 1, 2025.
+//  Updated December 4, 2025 - Added avatar toggle and memory monitoring settings
 //
 
 import SwiftUI
@@ -14,12 +15,15 @@ struct SettingsView: View {
     @State private var matchThreshold: Double
     @State private var autoLockTimeout: Int
     @State private var isDarkMode: Bool
+    @State private var showAvatarsInList: Bool
+    @State private var showMemoryMonitor: Bool
     @State private var cacheStatus: FaceDataCacheStatus = .empty
     @State private var isDownloading = false
     @State private var downloadProgress: (current: Int, total: Int) = (0, 0)
     @State private var statusMessage: String = ""
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var currentMemoryInfo: MemoryInfo?
     
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0  // 0=System, 1=Light, 2=Dark
     
@@ -30,6 +34,7 @@ struct SettingsView: View {
     private let settingsService = SettingsService.shared
     private let cacheService = FaceDataCacheService.shared
     private let firebaseService = FirebaseService.shared
+    private let memoryService = MemoryMonitorService.shared
     
     init(schoolId: String, schoolName: String = "", onDownloadComplete: (() -> Void)? = nil) {
         self.schoolId = schoolId
@@ -38,6 +43,8 @@ struct SettingsView: View {
         self._matchThreshold = State(initialValue: SettingsService.shared.matchThreshold)
         self._autoLockTimeout = State(initialValue: SettingsService.shared.autoLockTimeout)
         self._isDarkMode = State(initialValue: UserDefaults.standard.integer(forKey: "appearanceMode") == 2)
+        self._showAvatarsInList = State(initialValue: SettingsService.shared.showAvatarsInList)
+        self._showMemoryMonitor = State(initialValue: SettingsService.shared.showMemoryMonitor)
     }
     
     private var currentColorScheme: ColorScheme? {
@@ -268,6 +275,98 @@ struct SettingsView: View {
                     Text("Choose your preferred color scheme. System uses your device settings.")
                 }
                 
+                // MARK: - Display Settings Section
+                Section {
+                    Toggle(isOn: $showAvatarsInList) {
+                        HStack {
+                            Image(systemName: "person.crop.circle")
+                                .foregroundColor(.purple)
+                            Text("Show Avatars in Student List")
+                        }
+                    }
+                    .onChange(of: showAvatarsInList) { oldValue, newValue in
+                        settingsService.showAvatarsInList = newValue
+                    }
+                } header: {
+                    Text("Display")
+                } footer: {
+                    Text("Avatars show student photos in the list. Turn OFF to save memory and improve performance.")
+                }
+                
+                // MARK: - Memory Monitor Section
+                Section {
+                    // Current Memory Stats
+                    if let memory = currentMemoryInfo {
+                        HStack {
+                            Image(systemName: "memorychip")
+                                .foregroundColor(.orange)
+                            Text("App Memory")
+                            Spacer()
+                            Text(memory.appUsageFormatted)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.orange)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "iphone")
+                                .foregroundColor(.green)
+                            Text("Available Memory")
+                            Spacer()
+                            Text(memory.deviceFreeFormatted)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.green)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "cpu")
+                                .foregroundColor(.blue)
+                            Text("Total Device Memory")
+                            Spacer()
+                            Text(memory.deviceTotalFormatted)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    // Refresh button
+                    Button {
+                        refreshMemoryInfo()
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Refresh Memory Info")
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    // Memory monitor toggle
+                    Toggle(isOn: $showMemoryMonitor) {
+                        HStack {
+                            Image(systemName: "chart.line.uptrend.xyaxis")
+                                .foregroundColor(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Live Memory Monitor")
+                                Text("Shows real-time chart overlay")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .onChange(of: showMemoryMonitor) { oldValue, newValue in
+                        settingsService.showMemoryMonitor = newValue
+                        if newValue {
+                            memoryService.startMonitoring()
+                        } else {
+                            memoryService.stopMonitoring()
+                        }
+                    }
+                } header: {
+                    Text("Memory")
+                } footer: {
+                    Text("Live monitor shows app memory usage as a floating chart. Stays visible while navigating between screens.")
+                }
+                
                 // MARK: - App Info Section
                 Section {
                     HStack {
@@ -291,6 +390,7 @@ struct SettingsView: View {
             }
             .onAppear {
                 loadCacheStatus()
+                refreshMemoryInfo()
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) { }
@@ -305,6 +405,12 @@ struct SettingsView: View {
     
     private func loadCacheStatus() {
         cacheStatus = cacheService.getCacheStatus()
+    }
+    
+    private func refreshMemoryInfo() {
+        Task { @MainActor in
+            currentMemoryInfo = memoryService.getCurrentMemoryInfo()
+        }
     }
     
     private func downloadFaceData() async {

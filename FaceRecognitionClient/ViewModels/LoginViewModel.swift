@@ -8,6 +8,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import FirebaseAuth
 
 class LoginViewModel: ObservableObject {
     @Published var schoolCode: String = ""
@@ -17,6 +18,7 @@ class LoginViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var isAuthenticated: Bool = false
+    @Published var isCheckingSession: Bool = true  // Show loading while checking session
     
     @Published var currentStaff: Staff?
     @Published var currentSchool: School?
@@ -26,6 +28,72 @@ class LoginViewModel: ObservableObject {
     
     init() {
         loadSavedCredentials()
+        
+        // Check for existing session on app launch
+        Task {
+            await checkExistingSession()
+        }
+    }
+    
+    // MARK: - Check Existing Session
+    
+    @MainActor
+    func checkExistingSession() async {
+        isCheckingSession = true
+        
+        // Check if user is already signed in with Firebase
+        guard let currentUser = Auth.auth().currentUser else {
+            print("📱 No existing session found")
+            isCheckingSession = false
+            return
+        }
+        
+        print("📱 Found existing session for: \(currentUser.email ?? "unknown")")
+        
+        // Get saved school code
+        let savedSchoolCode = keychainService.loadSavedCredentials().schoolCode ?? ""
+        
+        guard !savedSchoolCode.isEmpty else {
+            print("⚠️ No saved school code, requiring re-login")
+            try? Auth.auth().signOut()
+            isCheckingSession = false
+            return
+        }
+        
+        do {
+            // Load staff profile
+            let staff = try await firebaseService.loadStaffProfile(uid: currentUser.uid)
+            
+            // Verify staff is still active
+            guard staff.isActive else {
+                print("⚠️ Staff account is inactive")
+                try Auth.auth().signOut()
+                isCheckingSession = false
+                return
+            }
+            
+            // Load school data
+            let school = try await firebaseService.loadSchool(schoolId: savedSchoolCode)
+            
+            // Update last login time
+            try await firebaseService.updateLastLogin(staffId: staff.id)
+            
+            // Restore session
+            self.schoolCode = savedSchoolCode
+            self.email = currentUser.email ?? ""
+            self.currentStaff = staff
+            self.currentSchool = school
+            self.isAuthenticated = true
+            
+            print("✅ Session restored: \(staff.displayName) at \(school.name)")
+            
+        } catch {
+            print("⚠️ Failed to restore session: \(error)")
+            // Session is invalid, sign out
+            try? Auth.auth().signOut()
+        }
+        
+        isCheckingSession = false
     }
     
     // MARK: - Load Saved Credentials
@@ -70,7 +138,7 @@ class LoginViewModel: ObservableObject {
             isAuthenticated = true
             isLoading = false
             
-            print("✅ Login successful: \\(staff.displayName) at \\(school.name)")
+            print("✅ Login successful: \(staff.displayName) at \(school.name)")
             
         } catch {
             isLoading = false

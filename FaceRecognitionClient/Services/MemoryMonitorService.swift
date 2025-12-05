@@ -44,17 +44,17 @@ struct MemoryInfo: Identifiable, Sendable {
 
 @MainActor
 final class MemoryMonitorService: ObservableObject {
-    nonisolated static let shared = MemoryMonitorService()
+    static let shared = MemoryMonitorService()
     
     @Published var currentMemory: MemoryInfo?
     @Published var memoryHistory: [MemoryInfo] = []
     @Published var isMonitoring = false
     
     private var timer: Timer?
-    private let maxHistoryCount = 60  // Keep last 60 samples (1 minute at 1s interval)
+    private let maxHistoryCount = 300  // Keep last 300 samples (5 minutes at 1s interval)
     private let updateInterval: TimeInterval = 1.0
     
-    nonisolated private init() {}
+    private init() {}
     
     // MARK: - Start/Stop Monitoring
     

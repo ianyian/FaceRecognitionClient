@@ -4,9 +4,11 @@
 //
 //  Created on December 1, 2025.
 //  Updated December 4, 2025 - Added avatar toggle and memory monitoring settings
+//  Updated December 5, 2025 - Added live memory chart in Settings page
 //
 
 import SwiftUI
+import Charts
 
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
@@ -17,6 +19,8 @@ struct SettingsView: View {
     @State private var isDarkMode: Bool
     @State private var showAvatarsInList: Bool
     @State private var showMemoryMonitor: Bool
+    @State private var showActivityLog: Bool
+    @State private var showWhatsAppButton: Bool
     @State private var cacheStatus: FaceDataCacheStatus = .empty
     @State private var isDownloading = false
     @State private var downloadProgress: (current: Int, total: Int) = (0, 0)
@@ -24,6 +28,8 @@ struct SettingsView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var currentMemoryInfo: MemoryInfo?
+    @State private var memoryHistory: [MemoryInfo] = []
+    @State private var memoryTimer: Timer?
     
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0  // 0=System, 1=Light, 2=Dark
     
@@ -34,7 +40,6 @@ struct SettingsView: View {
     private let settingsService = SettingsService.shared
     private let cacheService = FaceDataCacheService.shared
     private let firebaseService = FirebaseService.shared
-    private let memoryService = MemoryMonitorService.shared
     
     init(schoolId: String, schoolName: String = "", onDownloadComplete: (() -> Void)? = nil) {
         self.schoolId = schoolId
@@ -45,6 +50,8 @@ struct SettingsView: View {
         self._isDarkMode = State(initialValue: UserDefaults.standard.integer(forKey: "appearanceMode") == 2)
         self._showAvatarsInList = State(initialValue: SettingsService.shared.showAvatarsInList)
         self._showMemoryMonitor = State(initialValue: SettingsService.shared.showMemoryMonitor)
+        self._showActivityLog = State(initialValue: SettingsService.shared.showActivityLog)
+        self._showWhatsAppButton = State(initialValue: SettingsService.shared.showWhatsAppButton)
     }
     
     private var currentColorScheme: ColorScheme? {
@@ -287,10 +294,42 @@ struct SettingsView: View {
                     .onChange(of: showAvatarsInList) { oldValue, newValue in
                         settingsService.showAvatarsInList = newValue
                     }
+                    
+                    Toggle(isOn: $showActivityLog) {
+                        HStack {
+                            Image(systemName: "text.alignleft")
+                                .foregroundColor(.blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Show Activity Log")
+                                Text("Display troubleshooting log on camera screen")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .onChange(of: showActivityLog) { oldValue, newValue in
+                        settingsService.showActivityLog = newValue
+                    }
+                    
+                    Toggle(isOn: $showWhatsAppButton) {
+                        HStack {
+                            Image(systemName: "message.fill")
+                                .foregroundColor(.green)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("WhatsApp Parent Button")
+                                Text("Show WhatsApp button on successful recognition")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .onChange(of: showWhatsAppButton) { oldValue, newValue in
+                        settingsService.showWhatsAppButton = newValue
+                    }
                 } header: {
                     Text("Display")
                 } footer: {
-                    Text("Avatars show student photos in the list. Turn OFF to save memory and improve performance.")
+                    Text("Activity log shows real-time recognition details. Turn OFF for more camera space.")
                 }
                 
                 // MARK: - Memory Monitor Section
@@ -326,6 +365,13 @@ struct SettingsView: View {
                                 .font(.system(.body, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
+                    } else {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Loading memory info...")
+                                .foregroundColor(.secondary)
+                        }
                     }
                     
                     // Refresh button
@@ -347,7 +393,7 @@ struct SettingsView: View {
                                 .foregroundColor(.orange)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Live Memory Monitor")
-                                Text("Shows real-time chart overlay")
+                                Text("Shows real-time chart on this page")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -356,10 +402,17 @@ struct SettingsView: View {
                     .onChange(of: showMemoryMonitor) { oldValue, newValue in
                         settingsService.showMemoryMonitor = newValue
                         if newValue {
-                            memoryService.startMonitoring()
+                            startLiveMonitoring()
                         } else {
-                            memoryService.stopMonitoring()
+                            stopLiveMonitoring()
                         }
+                    }
+                    
+                    // Live Memory Chart (shown when toggle is ON)
+                    if showMemoryMonitor {
+                        MemoryChartView(memoryHistory: memoryHistory)
+                            .frame(height: 150)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                     }
                 } header: {
                     Text("Memory")
@@ -391,6 +444,14 @@ struct SettingsView: View {
             .onAppear {
                 loadCacheStatus()
                 refreshMemoryInfo()
+                // Start monitoring if already enabled
+                if showMemoryMonitor {
+                    startLiveMonitoring()
+                }
+            }
+            .onDisappear {
+                // Stop monitoring when leaving settings
+                stopLiveMonitoring()
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) { }
@@ -408,9 +469,66 @@ struct SettingsView: View {
     }
     
     private func refreshMemoryInfo() {
-        Task { @MainActor in
-            currentMemoryInfo = memoryService.getCurrentMemoryInfo()
+        currentMemoryInfo = getMemoryInfo()
+    }
+    
+    private func startLiveMonitoring() {
+        // Get initial reading
+        let info = getMemoryInfo()
+        currentMemoryInfo = info
+        memoryHistory = [info]
+        
+        // Start timer for continuous updates
+        memoryTimer?.invalidate()
+        memoryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            let newInfo = getMemoryInfo()
+            currentMemoryInfo = newInfo
+            memoryHistory.append(newInfo)
+            
+            // Keep last 300 samples (5 minutes)
+            if memoryHistory.count > 300 {
+                memoryHistory.removeFirst()
+            }
         }
+    }
+    
+    private func stopLiveMonitoring() {
+        memoryTimer?.invalidate()
+        memoryTimer = nil
+    }
+    
+    private func getMemoryInfo() -> MemoryInfo {
+        // Get app memory
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        let appMemory = kerr == KERN_SUCCESS ? Double(info.resident_size) / 1024.0 / 1024.0 : 0
+        
+        // Get device memory
+        let totalMemory = Double(ProcessInfo.processInfo.physicalMemory) / 1024.0 / 1024.0
+        
+        var pageSize: vm_size_t = 0
+        host_page_size(mach_host_self(), &pageSize)
+        
+        var vmStats = vm_statistics64()
+        var vmCount = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        let vmKerr = withUnsafeMutablePointer(to: &vmStats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(vmCount)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &vmCount)
+            }
+        }
+        let freeMemory = vmKerr == KERN_SUCCESS ? Double(vmStats.free_count + vmStats.inactive_count) * Double(pageSize) / 1024.0 / 1024.0 : 0
+        
+        return MemoryInfo(
+            timestamp: Date(),
+            appUsedMB: appMemory,
+            deviceFreeMB: freeMemory,
+            deviceTotalMB: totalMemory
+        )
     }
     
     private func downloadFaceData() async {
@@ -459,6 +577,149 @@ struct SettingsView: View {
         } catch {
             errorMessage = error.localizedDescription
             showError = true
+        }
+    }
+}
+
+// MARK: - Memory Chart View
+
+struct MemoryChartView: View {
+    let memoryHistory: [MemoryInfo]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Chart header
+            HStack {
+                Text("📊 Live Memory Usage")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Spacer()
+                if let latest = memoryHistory.last {
+                    Text(latest.appUsageFormatted)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundColor(memoryColor(for: latest.appUsedMB))
+                }
+            }
+            
+            // Chart
+            if #available(iOS 16.0, *) {
+                chartView
+            } else {
+                fallbackChartView
+            }
+            
+            // Time axis labels
+            HStack {
+                Text("-5m")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("-2.5m")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("Now")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.orange)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+    
+    @available(iOS 16.0, *)
+    private var chartView: some View {
+        let maxValue = max((memoryHistory.map(\.appUsedMB).max() ?? 100) * 1.1, 50)
+        let minValue = max((memoryHistory.map(\.appUsedMB).min() ?? 0) * 0.9, 0)
+        
+        return Chart {
+            ForEach(Array(memoryHistory.enumerated()), id: \.element.id) { index, info in
+                LineMark(
+                    x: .value("Index", index),
+                    y: .value("MB", info.appUsedMB)
+                )
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.orange, Color.red.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .lineStyle(StrokeStyle(lineWidth: 2))
+                
+                AreaMark(
+                    x: .value("Index", index),
+                    y: .value("MB", info.appUsedMB)
+                )
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.orange.opacity(0.4), Color.orange.opacity(0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            }
+        }
+        .chartYScale(domain: minValue...maxValue)
+        .chartXScale(domain: 0...300)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+                AxisValueLabel {
+                    if let mb = value.as(Double.self) {
+                        Text("\(Int(mb))")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
+                    .foregroundStyle(Color.gray.opacity(0.3))
+            }
+        }
+        .chartXAxis(.hidden)
+        .frame(height: 100)
+    }
+    
+    private var fallbackChartView: some View {
+        GeometryReader { geometry in
+            if !memoryHistory.isEmpty {
+                let maxValue = memoryHistory.map(\.appUsedMB).max() ?? 100
+                let minValue = max(0, (memoryHistory.map(\.appUsedMB).min() ?? 0) - 10)
+                let range = max(maxValue - minValue, 1)
+                
+                Path { path in
+                    let points = memoryHistory.enumerated().map { index, info -> CGPoint in
+                        let x = CGFloat(index) / 300.0 * geometry.size.width
+                        let y = (1 - CGFloat((info.appUsedMB - minValue) / range)) * geometry.size.height
+                        return CGPoint(x: x, y: y)
+                    }
+                    
+                    if let first = points.first {
+                        path.move(to: first)
+                        for point in points.dropFirst() {
+                            path.addLine(to: point)
+                        }
+                    }
+                }
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.orange, Color.red.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    lineWidth: 2
+                )
+            }
+        }
+        .frame(height: 100)
+    }
+    
+    private func memoryColor(for mb: Double) -> Color {
+        if mb > 300 {
+            return .red
+        } else if mb > 150 {
+            return .orange
+        } else {
+            return .green
         }
     }
 }

@@ -28,6 +28,7 @@ struct FaceRecognitionClientApp: App {
 // Wrapper view to handle appearance changes and global overlays
 struct ContentContainerView: View {
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0
+    @StateObject private var memoryService = MemoryMonitorService.shared
     @State private var showMemoryMonitor: Bool = false
     
     var body: some View {
@@ -35,18 +36,17 @@ struct ContentContainerView: View {
             LoginView()
                 .preferredColorScheme(colorScheme)
             
-            // Global memory monitor overlay
+            // Global memory monitor overlay - positioned at bottom right
             if showMemoryMonitor {
-                MemoryMonitorOverlayContainer()
+                MemoryMonitorOverlay()
+                    .environmentObject(memoryService)
             }
         }
         .onAppear {
             // Check if memory monitor should be running
             showMemoryMonitor = SettingsService.shared.showMemoryMonitor
             if showMemoryMonitor {
-                Task { @MainActor in
-                    MemoryMonitorService.shared.startMonitoring()
-                }
+                memoryService.startMonitoring()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
@@ -54,12 +54,10 @@ struct ContentContainerView: View {
             let newValue = SettingsService.shared.showMemoryMonitor
             if newValue != showMemoryMonitor {
                 showMemoryMonitor = newValue
-                Task { @MainActor in
-                    if newValue {
-                        MemoryMonitorService.shared.startMonitoring()
-                    } else {
-                        MemoryMonitorService.shared.stopMonitoring()
-                    }
+                if newValue {
+                    memoryService.startMonitoring()
+                } else {
+                    memoryService.stopMonitoring()
                 }
             }
         }
@@ -71,14 +69,5 @@ struct ContentContainerView: View {
         case 2: return .dark
         default: return nil
         }
-    }
-}
-
-// Container to observe MemoryMonitorService
-struct MemoryMonitorOverlayContainer: View {
-    @State private var memoryService = MemoryMonitorService.shared
-    
-    var body: some View {
-        MemoryMonitorOverlay()
     }
 }

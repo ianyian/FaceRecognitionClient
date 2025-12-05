@@ -70,7 +70,7 @@ struct StudentListView: View {
                 StudentFormView(viewModel: viewModel, isEdit: true)
             }
             .navigationDestination(item: $viewModel.selectedStudent) { student in
-                StudentDetailView(viewModel: viewModel, student: student)
+                StudentDetailView(viewModel: viewModel, initialStudent: student)
             }
         }
         .overlay(alignment: .bottom) {

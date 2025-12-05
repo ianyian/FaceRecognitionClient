@@ -455,6 +455,11 @@ class StudentViewModel: ObservableObject {
         // Get student full name for faceData
         let studentFullName = "\(formData.studentFirstName) \(formData.studentLastName)"
         
+        // Check if name or class changed (need to update faceData)
+        let nameChanged = selectedStudent?.firstName != formData.studentFirstName ||
+                          selectedStudent?.lastName != formData.studentLastName
+        let classChanged = selectedStudent?.className != formData.className
+        
         // Update data matching CoMa web app schema
         var updateData: [String: Any] = [
             "firstName": formData.studentFirstName,
@@ -503,6 +508,13 @@ class StudentViewModel: ObservableObject {
                     encodings: faceEncodings
                 )
             }
+        } else if nameChanged || classChanged {
+            // No new images, but name or class changed - update existing faceData records
+            try await updateExistingFaceData(
+                studentId: studentId,
+                studentName: studentFullName,
+                className: formData.className
+            )
         }
         
         // Update student document
@@ -510,6 +522,9 @@ class StudentViewModel: ObservableObject {
             .collection("schools").document(schoolId)
             .collection("students").document(studentId)
             .updateData(updateData)
+        
+        // Refresh selectedStudent so detail view shows updated data
+        await loadStudentDetail(studentId)
         
         showSuccess("\(formData.studentFirstName) has been updated!")
         print("✅ Updated student: \(studentId)")
@@ -713,6 +728,33 @@ class StudentViewModel: ObservableObject {
         
         try await batch.commit()
         print("✅ Deleted \(querySnapshot.documents.count) existing faceData records for student \(studentId)")
+    }
+    
+    /// Update studentName and className in existing faceData records when student info changes
+    private func updateExistingFaceData(studentId: String, studentName: String, className: String) async throws {
+        let querySnapshot = try await db
+            .collection("schools").document(schoolId)
+            .collection("faceData")
+            .whereField("studentId", isEqualTo: studentId)
+            .getDocuments()
+        
+        if querySnapshot.documents.isEmpty {
+            print("ℹ️ No existing faceData found for student \(studentId) to update")
+            return
+        }
+        
+        let batch = db.batch()
+        
+        for document in querySnapshot.documents {
+            batch.updateData([
+                "studentName": studentName,
+                "className": className,
+                "updatedAt": Date()
+            ], forDocument: document.reference)
+        }
+        
+        try await batch.commit()
+        print("✅ Updated \(querySnapshot.documents.count) faceData records for student \(studentId) with new name: \(studentName), class: \(className)")
     }
     
     /// Get current faceData version from faceDataMeta collection

@@ -75,6 +75,7 @@ class CameraViewModel: ObservableObject {
     @Published var cacheStatus: FaceDataCacheStatus = .empty
     @Published var showResultPopup: Bool = false  // Show result popup after detection
     @Published var isPaused: Bool = false          // Pause camera capture until user confirms
+    @Published var matchedParentPhone: String? = nil  // Parent phone for WhatsApp button
     
     private let firebaseService = FirebaseService.shared
     private let faceRecognitionService = FaceRecognitionService.shared
@@ -283,9 +284,22 @@ class CameraViewModel: ObservableObject {
             }
             await addLog("⏱️ Time: \(timeStr)")
             
+            // Fetch parent phone for WhatsApp button (if match found)
+            var fetchedPhone: String? = nil
+            if let match = matchResult.match, let schoolId = school?.id {
+                do {
+                    let student = try await firebaseService.getStudent(schoolId: schoolId, studentId: match.studentId)
+                    fetchedPhone = student?.parentPhoneNumber
+                    print("📱 WhatsApp: Fetched phone=\(fetchedPhone ?? "nil") for \(match.studentName)")
+                } catch {
+                    print("⚠️ Failed to fetch student for WhatsApp: \(error)")
+                }
+            }
+            
             await MainActor.run {
                 self.processingTime = timeStr
                 self.isComparing = false
+                self.matchedParentPhone = fetchedPhone  // Set parent phone for WhatsApp button
                 
                 if let match = matchResult.match {
                     self.status = .success(match.studentName)
@@ -477,6 +491,25 @@ class CameraViewModel: ObservableObject {
             processingTime = String(format: "%.2fs", elapsed)
         }
         
+        // Fetch parent phone from student record for WhatsApp button
+        var fetchedPhone: String? = nil
+        if let schoolId = school?.id {
+            do {
+                let student = try await firebaseService.getStudent(schoolId: schoolId, studentId: match.studentId)
+                fetchedPhone = student?.parentPhoneNumber
+                print("📱 WhatsApp: Fetched student, parentPhone=\(fetchedPhone ?? "nil"), setting=\(SettingsService.shared.showWhatsAppButton)")
+            } catch {
+                print("⚠️ Failed to fetch student for WhatsApp: \(error)")
+            }
+        } else {
+            print("⚠️ WhatsApp: school?.id is nil")
+        }
+        
+        // Set on main actor to ensure UI sees the update
+        await MainActor.run {
+            matchedParentPhone = fetchedPhone
+        }
+        
         // Provide haptic feedback
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
@@ -486,10 +519,6 @@ class CameraViewModel: ObservableObject {
             do {
                 try await firebaseService.recordAttendance(schoolId: schoolId, studentId: match.studentId)
                 await addLog("📝 Attendance recorded")
-                
-                // TODO: Send WhatsApp notification (to be implemented later)
-                // For now, just log that we would send it
-                await addLog("📱 WhatsApp notification pending...")
                 
             } catch {
                 await addLog("⚠️ Failed to record attendance: \(error.localizedDescription)")
@@ -727,6 +756,9 @@ class CameraViewModel: ObservableObject {
         lastCheckTime = dateFormatter.string(from: match.matchTimestamp)
         studentName = match.student.fullName
         processingTime = String(format: "%.2fs", match.processingTime)
+        
+        // Store parent phone for WhatsApp button
+        matchedParentPhone = match.student.parentPhoneNumber
         
         // Provide haptic feedback
         let generator = UINotificationFeedbackGenerator()

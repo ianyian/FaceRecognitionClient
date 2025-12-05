@@ -22,6 +22,8 @@ class SettingsService {
         static let autoLockTimeout = "auto_lock_timeout"
         static let showAvatarsInList = "show_avatars_in_list"
         static let showMemoryMonitor = "show_memory_monitor"
+        static let showActivityLog = "show_activity_log"
+        static let showWhatsAppButton = "show_whatsapp_button"
     }
     
     // MARK: - Match Threshold
@@ -123,13 +125,52 @@ class SettingsService {
     // MARK: - Memory Monitor
     
     /// Whether to show persistent memory monitor overlay
+    /// NOTE: This is NOT persisted - always starts OFF to save resources
+    private var _showMemoryMonitor = false
+    
     var showMemoryMonitor: Bool {
         get {
-            return defaults.bool(forKey: Keys.showMemoryMonitor)
+            return _showMemoryMonitor
         }
         set {
-            defaults.set(newValue, forKey: Keys.showMemoryMonitor)
-            print("⚙️ Show memory monitor: \(newValue)")
+            _showMemoryMonitor = newValue
+            // Post notification so views can react
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
+            print("⚙️ Show memory monitor: \(newValue) (session only, not saved)")
+        }
+    }
+    
+    // MARK: - Activity Log
+    
+    /// Whether to show activity log on main camera screen (default ON for troubleshooting)
+    var showActivityLog: Bool {
+        get {
+            // Default true (on) - check if key exists
+            if defaults.object(forKey: Keys.showActivityLog) == nil {
+                return true  // Default ON
+            }
+            return defaults.bool(forKey: Keys.showActivityLog)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.showActivityLog)
+            print("⚙️ Show activity log: \(newValue)")
+        }
+    }
+    
+    // MARK: - WhatsApp Button
+    
+    /// Whether to show WhatsApp Parent button on success popup (default ON)
+    var showWhatsAppButton: Bool {
+        get {
+            // Default true (on) - check if key exists
+            if defaults.object(forKey: Keys.showWhatsAppButton) == nil {
+                return true  // Default ON
+            }
+            return defaults.bool(forKey: Keys.showWhatsAppButton)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.showWhatsAppButton)
+            print("⚙️ Show WhatsApp button: \(newValue)")
         }
     }
     
@@ -141,6 +182,8 @@ class SettingsService {
         defaults.removeObject(forKey: Keys.autoLockTimeout)
         defaults.removeObject(forKey: Keys.showAvatarsInList)
         defaults.removeObject(forKey: Keys.showMemoryMonitor)
+        defaults.removeObject(forKey: Keys.showActivityLog)
+        defaults.removeObject(forKey: Keys.showWhatsAppButton)
         // Don't reset schoolId
         print("⚙️ Settings reset to defaults")
     }

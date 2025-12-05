@@ -80,7 +80,12 @@ struct StudentDetailView: View {
     @ObservedObject var viewModel: StudentViewModel
     @Environment(\.dismiss) var dismiss
     
-    let student: Student
+    let initialStudent: Student
+    
+    // Use selectedStudent from viewModel if available (for refresh after edit), otherwise use initial
+    private var student: Student {
+        viewModel.selectedStudent ?? initialStudent
+    }
     
     @State private var selectedImageIndex: Int?
     @State private var showImagePreview = false
@@ -105,6 +110,16 @@ struct StudentDetailView: View {
         }
         .navigationTitle("Student Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    viewModel.prepareEditForm()
+                } label: {
+                    Text("Edit")
+                        .fontWeight(.medium)
+                }
+            }
+        }
         .alert("Delete Student", isPresented: $viewModel.showingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -126,17 +141,45 @@ struct StudentDetailView: View {
     // MARK: - Student Info Card
     
     private var studentInfoCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Student Information")
                 .font(.headline)
             
             Divider()
             
-            StudentDetailRow(label: "First Name", value: student.firstName)
-            StudentDetailRow(label: "Last Name", value: student.lastName)
+            // Name (combined first + last)
+            StudentDetailRow(label: "Name", value: student.fullName)
+            
+            // Class
             StudentDetailRow(label: "Class", value: student.className)
-            StudentDetailRow(label: "Registration Date", value: formattedDate(student.registrationDate))
-            StudentDetailRow(label: "Status", value: student.status.rawValue, valueColor: statusColor)
+            
+            // Registration Date + Status in one line
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Registered")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(formattedDate(student.registrationDate))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Status")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(student.status.rawValue)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(statusColor.opacity(0.15))
+                        .cornerRadius(6)
+                }
+            }
         }
         .padding()
         .background(Color(.systemBackground))
@@ -147,15 +190,46 @@ struct StudentDetailView: View {
     // MARK: - Parent Info Card
     
     private var parentInfoCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Parent/Guardian Information")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Parent/Guardian")
                 .font(.headline)
             
             Divider()
             
-            // Use computed properties that handle both new and legacy schema
-            StudentDetailRow(label: "Parent Name", value: student.parentFullName ?? "-")
-            StudentDetailRow(label: "WhatsApp", value: student.parentPhoneNumber ?? "-")
+            // Parent Name + WhatsApp in one line
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Name")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(student.parentFullName ?? "-")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("WhatsApp")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if let phone = student.parentPhoneNumber, !phone.isEmpty {
+                        Link(destination: URL(string: "https://wa.me/\(phone.replacingOccurrences(of: "+", with: ""))")!) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "phone.fill")
+                                    .font(.caption)
+                                Text(phone)
+                                    .font(.subheadline)
+                            }
+                            .foregroundColor(.green)
+                        }
+                    } else {
+                        Text("-")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
         }
         .padding()
         .background(Color(.systemBackground))
@@ -216,43 +290,26 @@ struct StudentDetailView: View {
     
     // MARK: - Action Buttons
     
+    @ViewBuilder
     private var actionButtons: some View {
-        VStack(spacing: 12) {
-            // Edit Button
+        // Delete Button (only for non-deleted students)
+        if student.status != .deleted {
             Button {
-                viewModel.prepareEditForm()
+                viewModel.confirmDelete()
             } label: {
                 HStack {
-                    Image(systemName: "pencil")
-                    Text("Edit Student")
+                    Image(systemName: "trash")
+                    Text("Delete Student")
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.blue)
-                .foregroundColor(.white)
+                .background(Color.red.opacity(0.1))
+                .foregroundColor(.red)
                 .cornerRadius(12)
             }
-            
-            // Delete Button (only for non-deleted students)
-            if student.status != .deleted {
-                Button {
-                    viewModel.confirmDelete()
-                } label: {
-                    HStack {
-                        Image(systemName: "trash")
-                        Text("Delete Student")
-                            .fontWeight(.semibold)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.red.opacity(0.1))
-                    .foregroundColor(.red)
-                    .cornerRadius(12)
-                }
-            }
+            .padding(.top, 8)
         }
-        .padding(.top, 8)
     }
     
     // MARK: - Helpers
@@ -300,7 +357,7 @@ struct StudentDetailRow: View {
     NavigationStack {
         StudentDetailView(
             viewModel: StudentViewModel(schoolId: "main-tuition-center"),
-            student: Student(
+            initialStudent: Student(
                 id: "test-id",
                 firstName: "Alice",
                 lastName: "Wong",

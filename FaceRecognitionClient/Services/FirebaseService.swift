@@ -132,6 +132,22 @@ class FirebaseService: ObservableObject {
         return try School(from: snapshot)
     }
     
+    // MARK: - Get Student
+    
+    func getStudent(schoolId: String, studentId: String) async throws -> Student? {
+        let snapshot = try await db.collection("schools")
+            .document(schoolId)
+            .collection("students")
+            .document(studentId)
+            .getDocument()
+        
+        guard snapshot.exists else {
+            return nil
+        }
+        
+        return try Student(from: snapshot)
+    }
+    
     // MARK: - Attendance Logs
     
     func recordAttendance(schoolId: String, studentId: String) async throws {

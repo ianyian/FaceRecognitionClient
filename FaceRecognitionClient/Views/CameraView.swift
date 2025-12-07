@@ -5,14 +5,14 @@
 //  Created on November 28, 2025.
 //
 
-import SwiftUI
 import AVFoundation
+import SwiftUI
 
 struct CameraView: View {
     let staff: Staff
     let school: School
     let onLogout: () -> Void
-    
+
     @StateObject private var viewModel = CameraViewModel()
     @State private var showLogoutAlert = false
     @State private var showSettings = false
@@ -20,11 +20,24 @@ struct CameraView: View {
     @State private var showCachedStudents = false  // Show cached students list
     @State private var showActivityLog = true  // Default ON, syncs with settings
     @Environment(\.colorScheme) var colorScheme
-    
+
+    // Multi-school support for global users
+    @State private var availableSchools: [School] = []
+    @State private var selectedSchool: School
+    @State private var isLoadingSchools = false
+    @State private var showSchoolPicker = false
+
+    init(staff: Staff, school: School, onLogout: @escaping () -> Void) {
+        self.staff = staff
+        self.school = school
+        self.onLogout = onLogout
+        self._selectedSchool = State(initialValue: school)
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 topBar
                 cameraPreviewArea
@@ -43,42 +56,68 @@ struct CameraView: View {
             Text("Are you sure you want to logout?")
         }
         .task {
-            await viewModel.loadData(staff: staff, school: school)
+            await viewModel.loadData(staff: staff, school: selectedSchool)
             showActivityLog = SettingsService.shared.showActivityLog
+
+            // Load available schools for global users
+            if staff.isGlobalUser {
+                await loadSchoolsForGlobalUser()
+            }
+        }
+        .onChange(of: selectedSchool.id) { newSchoolId in
+            // When global user changes school, reload data
+            Task {
+                await viewModel.loadData(staff: staff, school: selectedSchool)
+            }
         }
         .onDisappear {
             viewModel.stopCamera()
         }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) {
+            _ in
             showActivityLog = SettingsService.shared.showActivityLog
         }
         .sheet(isPresented: $viewModel.showImagePicker) {
-            ImagePicker(image: Binding(
-                get: { nil },
-                set: { image in
-                    if let image = image {
-                        Task {
-                            await viewModel.processPickedImage(image)
+            ImagePicker(
+                image: Binding(
+                    get: { nil },
+                    set: { image in
+                        if let image = image {
+                            Task {
+                                await viewModel.processPickedImage(image)
+                            }
                         }
                     }
-                }
-            ))
+                ))
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(schoolId: school.id, schoolName: school.name) {
-                viewModel.reloadCache()
-            }
+            SettingsView(
+                staff: staff,
+                schoolId: selectedSchool.id,
+                schoolName: selectedSchool.name,
+                onLogout: {
+                    showSettings = false
+                    viewModel.stopCamera()
+                    onLogout()
+                },
+                onDownloadComplete: {
+                    viewModel.reloadCache()
+                }
+            )
         }
         .fullScreenCover(isPresented: $showStudentManagement) {
-            StudentListView(school: school, onBack: {
-                showStudentManagement = false
-            })
+            StudentListView(
+                school: selectedSchool,
+                staff: staff,
+                onBack: {
+                    showStudentManagement = false
+                })
         }
         .sheet(isPresented: $showCachedStudents) {
             CachedStudentsView(
                 cacheStatus: viewModel.cacheStatus,
-                schoolId: school.id,
-                schoolName: school.name,
+                schoolId: selectedSchool.id,
+                schoolName: selectedSchool.name,
                 onDismiss: {
                     showCachedStudents = false
                 },
@@ -110,36 +149,21 @@ struct CameraView: View {
             }
         }
     }
-    
+
     // MARK: - Top Bar
-    
+
     private var topBar: some View {
         HStack {
-            // Logout button
-            Button(action: {
-                showLogoutAlert = true
-            }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.subheadline)
-                    Text("Logout")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
-                .foregroundColor(.white)
-                .cornerRadius(20)
-            }
-            
+            // School name/dropdown (replaces logout button)
+            schoolIndicator
+
             Spacer()
-            
+
             // Cache status indicator
             cacheStatusButton
-            
+
             Spacer()
-            
+
             // Students button
             Button(action: {
                 showStudentManagement = true
@@ -151,7 +175,7 @@ struct CameraView: View {
                     .foregroundColor(.white)
                     .clipShape(Circle())
             }
-            
+
             // Settings button
             Button(action: {
                 showSettings = true
@@ -167,7 +191,7 @@ struct CameraView: View {
         .padding()
         .background(Color.black.opacity(0.3))
     }
-    
+
     @ViewBuilder
     private var cacheStatusButton: some View {
         if viewModel.cacheStatus.hasCache {
@@ -202,15 +226,100 @@ struct CameraView: View {
             .cornerRadius(16)
         }
     }
-    
+
+    // MARK: - School Indicator (Name or Dropdown for Global Users)
+
+    @ViewBuilder
+    private var schoolIndicator: some View {
+        if staff.isGlobalUser {
+            // Global user: show dropdown to switch schools
+            Menu {
+                ForEach(availableSchools) { school in
+                    Button(action: {
+                        selectedSchool = school
+                    }) {
+                        HStack {
+                            Text(school.name)
+                            if selectedSchool.id == school.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "globe")
+                        .font(.subheadline)
+                    if isLoadingSchools {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .tint(.white)
+                    } else {
+                        Text(selectedSchool.name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    }
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+                .foregroundColor(.white)
+                .cornerRadius(20)
+            }
+            .disabled(isLoadingSchools || availableSchools.isEmpty)
+        } else {
+            // Non-global user: show school name as label (no dropdown)
+            HStack(spacing: 6) {
+                Image(systemName: "building.2")
+                    .font(.subheadline)
+                Text(selectedSchool.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+            .foregroundColor(.white)
+            .cornerRadius(20)
+        }
+    }
+
+    // MARK: - Load Schools for Global User
+
+    private func loadSchoolsForGlobalUser() async {
+        await MainActor.run {
+            isLoadingSchools = true
+        }
+
+        do {
+            let schools = try await FirebaseService.shared.loadAllSchools()
+            await MainActor.run {
+                availableSchools = schools
+                isLoadingSchools = false
+                print("🌐 Global user: loaded \(schools.count) schools for switching")
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingSchools = false
+                print("⚠️ Failed to load schools for global user: \(error)")
+            }
+        }
+    }
+
     // MARK: - Camera Preview Area
-    
+
     @ViewBuilder
     private var cameraPreviewArea: some View {
         ZStack {
             if let capturedImage = viewModel.capturedImage {
                 capturedImageView(capturedImage)
-            } else if viewModel.isCameraReady, let previewLayer = viewModel.cameraService.getPreviewLayer() {
+            } else if viewModel.isCameraReady,
+                let previewLayer = viewModel.cameraService.getPreviewLayer()
+            {
                 liveCameraPreview(previewLayer)
             } else if viewModel.isCameraReady && viewModel.isSimulator {
                 simulatorModeView
@@ -219,7 +328,7 @@ struct CameraView: View {
             } else {
                 cameraReadyView
             }
-            
+
             // Face Detection Box
             if viewModel.showFaceBox {
                 FaceDetectionBox()
@@ -228,7 +337,7 @@ struct CameraView: View {
         }
         .layoutPriority(1)
     }
-    
+
     private func capturedImageView(_ image: UIImage) -> some View {
         ZStack {
             GeometryReader { geo in
@@ -238,7 +347,7 @@ struct CameraView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
             }
-            
+
             if !viewModel.showResultPopup {
                 VStack {
                     if viewModel.isComparing {
@@ -266,9 +375,9 @@ struct CameraView: View {
                             .cornerRadius(10)
                             .padding(.top, 20)
                     }
-                    
+
                     Spacer()
-                    
+
                     Button {
                         viewModel.resumeFromTest()
                     } label: {
@@ -290,17 +399,17 @@ struct CameraView: View {
             }
         }
     }
-    
+
     private func liveCameraPreview(_ previewLayer: AVCaptureVideoPreviewLayer) -> some View {
         ZStack {
             CameraPreviewView(previewLayer: previewLayer)
-            
+
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
                     viewModel.testCapture()
                 }
-            
+
             VStack {
                 Spacer()
                 Text("👆 Tap anywhere to capture")
@@ -312,7 +421,7 @@ struct CameraView: View {
                     .cornerRadius(20)
                 Spacer()
             }
-            
+
             if viewModel.showAutoLockCountdown {
                 VStack {
                     HStack {
@@ -337,27 +446,27 @@ struct CameraView: View {
             }
         }
     }
-    
+
     private var simulatorModeView: some View {
         ZStack {
             Rectangle()
                 .fill(Color.gray.opacity(0.5))
-            
+
             VStack(spacing: 20) {
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 60))
                     .foregroundColor(.white.opacity(0.7))
-                
+
                 Text("💻 Simulator Test Mode")
                     .font(.title2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                
+
                 Text("Select an image to test Firebase save/retrieve")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
-                
+
                 Button(action: {
                     viewModel.showImagePicker = true
                 }) {
@@ -372,14 +481,14 @@ struct CameraView: View {
                     .foregroundColor(.white)
                     .cornerRadius(12)
                 }
-                
+
                 Text("Image will be saved to Firebase and retrieved for verification")
                     .font(.caption2)
                     .foregroundColor(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
             }
-            
+
             if let savedImage = viewModel.savedImage {
                 VStack {
                     HStack {
@@ -393,7 +502,7 @@ struct CameraView: View {
                                 .padding(.vertical, 5)
                                 .background(Color.green)
                                 .cornerRadius(6)
-                            
+
                             Image(uiImage: savedImage)
                                 .resizable()
                                 .scaledToFit()
@@ -412,7 +521,7 @@ struct CameraView: View {
             }
         }
     }
-    
+
     private var initializingCameraView: some View {
         Rectangle()
             .fill(Color.gray.opacity(0.3))
@@ -427,7 +536,7 @@ struct CameraView: View {
                 }
             )
     }
-    
+
     private var cameraReadyView: some View {
         Rectangle()
             .fill(Color.gray.opacity(0.3))
@@ -436,12 +545,12 @@ struct CameraView: View {
                     Image(systemName: "camera.fill")
                         .font(.system(size: 60))
                         .foregroundColor(.white.opacity(0.7))
-                    
+
                     Text("Camera Ready")
                         .font(.title2)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
-                    
+
                     Button(action: {
                         Task {
                             await viewModel.manualStartCamera()
@@ -461,9 +570,9 @@ struct CameraView: View {
                 }
             )
     }
-    
+
     // MARK: - Status Panel
-    
+
     private var statusPanel: some View {
         VStack(spacing: 0) {
             // Compact Status Bar with Lock Button
@@ -474,7 +583,7 @@ struct CameraView: View {
                         Image(systemName: viewModel.status.icon)
                             .font(.system(size: 20))
                             .foregroundColor(viewModel.status.color)
-                        
+
                         Text(viewModel.status.title)
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -482,21 +591,21 @@ struct CameraView: View {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 20))
                             .foregroundColor(.gray)
-                        
+
                         Text("Screen Locked")
                             .font(.subheadline)
                             .fontWeight(.semibold)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 if viewModel.isComparing {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle())
                         .scaleEffect(0.8)
                 }
-                
+
                 if viewModel.isCameraReady && !viewModel.isComparing {
                     Button(action: {
                         viewModel.manualLock()
@@ -518,8 +627,10 @@ struct CameraView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(viewModel.isCameraStarted ? viewModel.status.color.opacity(0.15) : Color.gray.opacity(0.15))
-            
+            .background(
+                viewModel.isCameraStarted
+                    ? viewModel.status.color.opacity(0.15) : Color.gray.opacity(0.15))
+
             // Activity Log
             if showActivityLog {
                 activityLogView
@@ -531,7 +642,7 @@ struct CameraView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(0.15), radius: 10, y: -5)
     }
-    
+
     private var activityLogView: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -543,17 +654,21 @@ struct CameraView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, 20)
                     } else {
-                        ForEach(Array(viewModel.statusLog.enumerated()), id: \.offset) { index, log in
+                        ForEach(Array(viewModel.statusLog.enumerated()), id: \.offset) {
+                            index, log in
                             Text(log)
                                 .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(log.contains("❌") || log.contains("FAILED") || log.contains("ERROR") ? .red :
-                                               log.contains("✅") ? .green : .primary)
+                                .foregroundColor(
+                                    log.contains("❌") || log.contains("FAILED")
+                                        || log.contains("ERROR")
+                                        ? .red : log.contains("✅") ? .green : .primary
+                                )
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 2)
                                 .id(index)
                         }
                     }
-                    
+
                     Color.clear
                         .frame(height: 5)
                         .id("bottom")
@@ -562,7 +677,9 @@ struct CameraView: View {
                 .padding(.vertical, 8)
             }
             .frame(height: 120)
-            .background(colorScheme == .dark ? Color(.systemBackground) : Color(.secondarySystemBackground))
+            .background(
+                colorScheme == .dark ? Color(.systemBackground) : Color(.secondarySystemBackground)
+            )
             .onChange(of: viewModel.statusLog.count) { _ in
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo("bottom", anchor: .bottom)
@@ -585,19 +702,19 @@ struct ResultPopupView: View {
     let onConfirm: () -> Void
     let onWhatsApp: () -> Void
     let onLock: () -> Void
-    
+
     private var isSuccess: Bool {
         if case .success = status { return true }
         return false
     }
-    
+
     private var canShowWhatsApp: Bool {
         guard isSuccess else { return false }
         guard showWhatsAppButton else { return false }
         guard let phone = parentPhone, !phone.isEmpty else { return false }
         return true
     }
-    
+
     var body: some View {
         ZStack {
             // Semi-transparent background - tappable to dismiss
@@ -606,26 +723,26 @@ struct ResultPopupView: View {
                 .onTapGesture {
                     onConfirm()
                 }
-            
+
             // Popup card
             VStack(spacing: 24) {
                 // Status icon
                 Image(systemName: status.icon)
                     .font(.system(size: 80))
                     .foregroundColor(status.color)
-                
+
                 // Title
                 Text(status.title)
                     .font(.title)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
-                
+
                 // Message
                 Text(status.message)
                     .font(.headline)
                     .foregroundColor(.white.opacity(0.9))
                     .multilineTextAlignment(.center)
-                
+
                 // Details (for success)
                 if case .success = status {
                     VStack(spacing: 8) {
@@ -634,7 +751,7 @@ struct ResultPopupView: View {
                             .foregroundColor(.white.opacity(0.7))
                     }
                 }
-                
+
                 // Buttons
                 VStack(spacing: 12) {
                     // WhatsApp button (only for success with parent phone and setting enabled)
@@ -659,7 +776,7 @@ struct ResultPopupView: View {
                         .contentShape(Rectangle())
                         .padding(.horizontal, 10)
                     }
-                    
+
                     // Next Capture button
                     Button {
                         onConfirm()
@@ -681,7 +798,7 @@ struct ResultPopupView: View {
                     .padding(.horizontal, 10)
                 }
                 .padding(.top, 10)
-                
+
                 // Screen-Lock button (moved to bottom with more spacing)
                 Button {
                     onLock()
@@ -716,15 +833,18 @@ struct ResultPopupView: View {
             )
             .padding(.horizontal, 30)
             .onAppear {
-                print("📱 ResultPopupView: parentPhone=\(parentPhone ?? "nil"), showSetting=\(showWhatsAppButton), isSuccess=\(isSuccess), canShow=\(canShowWhatsApp)")
+                print(
+                    "📱 ResultPopupView: parentPhone=\(parentPhone ?? "nil"), showSetting=\(showWhatsAppButton), isSuccess=\(isSuccess), canShow=\(canShowWhatsApp)"
+                )
             }
         }
     }
-    
+
     private func openWhatsApp(phone: String) {
-        let cleanNumber = phone.replacingOccurrences(of: "[^0-9+]", with: "", options: .regularExpression)
+        let cleanNumber = phone.replacingOccurrences(
+            of: "[^0-9+]", with: "", options: .regularExpression)
         let whatsappNumber = cleanNumber.replacingOccurrences(of: "+", with: "")
-        
+
         if let url = URL(string: "https://wa.me/\(whatsappNumber)") {
             UIApplication.shared.open(url)
         }
@@ -736,34 +856,37 @@ struct ResultPopupView: View {
 struct ImagePicker: UIViewControllerRepresentable {
     @Binding var image: UIImage?
     @Environment(\.dismiss) var dismiss
-    
+
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
         picker.sourceType = .photoLibrary
         return picker
     }
-    
+
     func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
+
     class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
         let parent: ImagePicker
-        
+
         init(_ parent: ImagePicker) {
             self.parent = parent
         }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
             if let image = info[.originalImage] as? UIImage {
                 parent.image = image
             }
             parent.dismiss()
         }
-        
+
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.dismiss()
         }
@@ -789,7 +912,7 @@ struct FaceDetectionBox: View {
                     CornerBracket(corners: [.bottomRight])
                 }
             }
-            
+
             // Label
             VStack {
                 Text("Face Detected")
@@ -801,7 +924,7 @@ struct FaceDetectionBox: View {
                     .foregroundColor(.white)
                     .cornerRadius(6)
                     .offset(y: -20)
-                
+
                 Spacer()
             }
         }
@@ -811,7 +934,7 @@ struct FaceDetectionBox: View {
 
 struct CornerBracket: View {
     let corners: UIRectCorner
-    
+
     var body: some View {
         RoundedCorner(radius: 4, corners: corners)
             .stroke(Color.green, lineWidth: 3)
@@ -822,7 +945,7 @@ struct CornerBracket: View {
 struct RoundedCorner: Shape {
     var radius: CGFloat = .infinity
     var corners: UIRectCorner = .allCorners
-    
+
     func path(in rect: CGRect) -> Path {
         let path = UIBezierPath(
             roundedRect: rect,
@@ -838,16 +961,16 @@ struct RoundedCorner: Shape {
 struct DetailRow: View {
     let label: String
     let value: String
-    
+
     var body: some View {
         HStack {
             Text(label)
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
-            
+
             Spacer()
-            
+
             Text(value)
                 .font(.subheadline)
                 .fontWeight(.medium)

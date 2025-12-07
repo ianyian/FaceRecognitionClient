@@ -71,22 +71,16 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3669689A2ED976AE0037CB0D /* FaceRecognitionClient */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FaceRecognitionClient;
 			sourceTree = "<group>";
 		};
 		366968A82ED976AE0037CB0D /* FaceRecognitionClientTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FaceRecognitionClientTests;
 			sourceTree = "<group>";
 		};
 		366968B22ED976AF0037CB0D /* FaceRecognitionClientUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FaceRecognitionClientUITests;
 			sourceTree = "<group>";
 		};

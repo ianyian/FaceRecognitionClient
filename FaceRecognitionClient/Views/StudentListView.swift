@@ -11,25 +11,27 @@ import SwiftUI
 struct StudentListView: View {
     @StateObject private var viewModel: StudentViewModel
     @Environment(\.colorScheme) var colorScheme
-    
+
     // Observe settings for avatar display
     @State private var showAvatars: Bool = SettingsService.shared.showAvatarsInList
-    
+
     let school: School
+    let staff: Staff
     let onBack: () -> Void
-    
-    init(school: School, onBack: @escaping () -> Void) {
+
+    init(school: School, staff: Staff, onBack: @escaping () -> Void) {
         self.school = school
+        self.staff = staff
         self.onBack = onBack
-        _viewModel = StateObject(wrappedValue: StudentViewModel(schoolId: school.id))
+        _viewModel = StateObject(wrappedValue: StudentViewModel(schoolId: school.id, staff: staff))
     }
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Filter Tabs
                 filterTabs
-                
+
                 // Student List
                 if viewModel.isLoading {
                     loadingView
@@ -47,12 +49,15 @@ struct StudentListView: View {
                         onBack()
                     }
                 }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        viewModel.prepareAddForm()
-                    } label: {
-                        Image(systemName: "plus")
+
+                // Only show Add button if user has create permission (Admin, Reception)
+                if staff.canCreate {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            viewModel.prepareAddForm()
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
@@ -64,13 +69,13 @@ struct StudentListView: View {
                 await viewModel.loadData()
             }
             .sheet(isPresented: $viewModel.showingAddForm) {
-                StudentFormView(viewModel: viewModel, isEdit: false)
+                StudentFormView(viewModel: viewModel, staff: staff, isEdit: false)
             }
             .sheet(isPresented: $viewModel.showingEditForm) {
-                StudentFormView(viewModel: viewModel, isEdit: true)
+                StudentFormView(viewModel: viewModel, staff: staff, isEdit: true)
             }
             .navigationDestination(item: $viewModel.selectedStudent) { student in
-                StudentDetailView(viewModel: viewModel, initialStudent: student)
+                StudentDetailView(viewModel: viewModel, staff: staff, initialStudent: student)
             }
         }
         .overlay(alignment: .bottom) {
@@ -88,9 +93,9 @@ struct StudentListView: View {
         }
         .animation(.spring(response: 0.3), value: viewModel.showToast)
     }
-    
+
     // MARK: - Filter Tabs
-    
+
     private var filterTabs: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -102,8 +107,11 @@ struct StudentListView: View {
                     } label: {
                         VStack(spacing: 8) {
                             HStack(spacing: 6) {
-                                Image(systemName: status == .registered ? "checkmark.circle.fill" : "trash.circle.fill")
-                                    .font(.subheadline)
+                                Image(
+                                    systemName: status == .registered
+                                        ? "checkmark.circle.fill" : "trash.circle.fill"
+                                )
+                                .font(.subheadline)
                                 Text(status.rawValue)
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
@@ -113,7 +121,7 @@ struct StudentListView: View {
                                     ? (status == .registered ? .green : .red)
                                     : .secondary
                             )
-                            
+
                             // Active indicator bar
                             Rectangle()
                                 .fill(
@@ -130,14 +138,14 @@ struct StudentListView: View {
                     .buttonStyle(.plain)
                 }
             }
-            
+
             Divider()
         }
         .background(Color(.systemBackground))
     }
-    
+
     // MARK: - Student List
-    
+
     private var studentList: some View {
         List {
             ForEach(viewModel.filteredStudents) { student in
@@ -156,9 +164,9 @@ struct StudentListView: View {
             showAvatars = SettingsService.shared.showAvatarsInList
         }
     }
-    
+
     // MARK: - Loading View
-    
+
     private var loadingView: some View {
         VStack(spacing: 16) {
             ProgressView()
@@ -168,9 +176,9 @@ struct StudentListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    
+
     // MARK: - Empty State
-    
+
     private var emptyStateView: some View {
         VStack(spacing: 16) {
             Text("🎓")
@@ -192,7 +200,7 @@ struct StudentRowView: View {
     let student: Student
     let schoolId: String
     let showAvatar: Bool
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Avatar - only show if setting is enabled
@@ -207,23 +215,23 @@ struct StudentRowView: View {
                 // Simple initials circle when avatar is disabled
                 InitialsAvatarView(name: student.fullName, size: 50)
             }
-            
+
             // Info
             VStack(alignment: .leading, spacing: 2) {
                 Text(student.fullName)
                     .font(.body)
                     .fontWeight(.medium)
-                
+
                 Text(student.className)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
+
             // Status Badge
             StatusBadge(status: student.status)
-            
+
             // Chevron
             Image(systemName: "chevron.right")
                 .font(.caption)
@@ -238,7 +246,7 @@ struct StudentRowView: View {
 struct InitialsAvatarView: View {
     let name: String
     let size: CGFloat
-    
+
     private var initials: String {
         let components = name.split(separator: " ")
         if components.count >= 2 {
@@ -250,22 +258,22 @@ struct InitialsAvatarView: View {
         }
         return "?"
     }
-    
+
     private var backgroundColor: Color {
         // Generate consistent color from name
         let hash = abs(name.hashValue)
         let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo]
         return colors[hash % colors.count]
     }
-    
+
     var body: some View {
         ZStack {
             Circle()
                 .fill(backgroundColor.opacity(0.2))
-            
+
             Circle()
                 .stroke(backgroundColor.opacity(0.3), lineWidth: 1)
-            
+
             Text(initials)
                 .font(.system(size: size * 0.36, weight: .semibold))
                 .foregroundColor(backgroundColor)
@@ -278,7 +286,7 @@ struct InitialsAvatarView: View {
 
 struct StatusBadge: View {
     let status: StudentStatus
-    
+
     var body: some View {
         Text(status.rawValue)
             .font(.caption)
@@ -289,7 +297,7 @@ struct StatusBadge: View {
             .foregroundColor(backgroundColor)
             .cornerRadius(12)
     }
-    
+
     private var backgroundColor: Color {
         switch status {
         case .registered:
@@ -307,13 +315,13 @@ struct StatusBadge: View {
 struct ToastView: View {
     let message: String
     let type: StudentViewModel.ToastType
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: iconName)
                 .font(.title3)
                 .foregroundColor(iconColor)
-            
+
             Text(message)
                 .font(.subheadline)
                 .fontWeight(.medium)
@@ -327,7 +335,7 @@ struct ToastView: View {
         .padding(.horizontal)
         .padding(.bottom, 20)
     }
-    
+
     private var iconName: String {
         switch type {
         case .success: return "checkmark.circle.fill"
@@ -335,7 +343,7 @@ struct ToastView: View {
         case .warning: return "exclamationmark.triangle.fill"
         }
     }
-    
+
     private var iconColor: Color {
         switch type {
         case .success: return .green
@@ -350,6 +358,14 @@ struct ToastView: View {
 #Preview {
     StudentListView(
         school: School(id: "main-tuition-center", name: "Main Tuition Center"),
+        staff: Staff(
+            id: "preview-staff",
+            email: "admin@example.com",
+            firstName: "Admin",
+            lastName: "User",
+            role: .admin,
+            schoolId: "main-tuition-center"
+        ),
         onBack: {}
     )
 }

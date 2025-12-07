@@ -7,13 +7,13 @@
 //  Updated December 5, 2025 - Added live memory chart in Settings page
 //
 
-import SwiftUI
 import Charts
+import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.colorScheme) var colorScheme
-    
+
     @State private var matchThreshold: Double
     @State private var autoLockTimeout: Int
     @State private var isDarkMode: Bool
@@ -30,30 +30,42 @@ struct SettingsView: View {
     @State private var currentMemoryInfo: MemoryInfo?
     @State private var memoryHistory: [MemoryInfo] = []
     @State private var memoryTimer: Timer?
-    
+    @State private var showLogoutAlert = false
+
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0  // 0=System, 1=Light, 2=Dark
-    
+
+    let staff: Staff?
     let schoolId: String
     let schoolName: String
+    let onLogout: (() -> Void)?
     let onDownloadComplete: (() -> Void)?
-    
+
     private let settingsService = SettingsService.shared
     private let cacheService = FaceDataCacheService.shared
     private let firebaseService = FirebaseService.shared
-    
-    init(schoolId: String, schoolName: String = "", onDownloadComplete: (() -> Void)? = nil) {
+
+    init(
+        staff: Staff? = nil,
+        schoolId: String,
+        schoolName: String = "",
+        onLogout: (() -> Void)? = nil,
+        onDownloadComplete: (() -> Void)? = nil
+    ) {
+        self.staff = staff
         self.schoolId = schoolId
         self.schoolName = schoolName
+        self.onLogout = onLogout
         self.onDownloadComplete = onDownloadComplete
         self._matchThreshold = State(initialValue: SettingsService.shared.matchThreshold)
         self._autoLockTimeout = State(initialValue: SettingsService.shared.autoLockTimeout)
-        self._isDarkMode = State(initialValue: UserDefaults.standard.integer(forKey: "appearanceMode") == 2)
+        self._isDarkMode = State(
+            initialValue: UserDefaults.standard.integer(forKey: "appearanceMode") == 2)
         self._showAvatarsInList = State(initialValue: SettingsService.shared.showAvatarsInList)
         self._showMemoryMonitor = State(initialValue: SettingsService.shared.showMemoryMonitor)
         self._showActivityLog = State(initialValue: SettingsService.shared.showActivityLog)
         self._showWhatsAppButton = State(initialValue: SettingsService.shared.showWhatsAppButton)
     }
-    
+
     private var currentColorScheme: ColorScheme? {
         switch appearanceMode {
         case 1: return .light
@@ -61,32 +73,98 @@ struct SettingsView: View {
         default: return nil
         }
     }
-    
+
+    private var roleDisplayName: String {
+        guard let role = staff?.role else { return "-" }
+        switch role {
+        case .admin: return "Administrator"
+        case .reception: return "Reception"
+        case .teacher: return "Teacher"
+        }
+    }
+
+    private var roleColor: Color {
+        guard let role = staff?.role else { return .secondary }
+        switch role {
+        case .admin: return .red
+        case .reception: return .blue
+        case .teacher: return .green
+        }
+    }
+
     var body: some View {
         NavigationView {
             Form {
-                // MARK: - Connection Section (MOVED TO TOP)
+                // MARK: - User Profile Section
                 Section {
+                    // User Name
                     HStack {
-                        Image(systemName: "building.2")
+                        Image(systemName: "person.circle.fill")
+                            .font(.title2)
                             .foregroundColor(.blue)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(schoolName.isEmpty ? schoolId : schoolName)
+                            Text(staff?.displayName ?? "Unknown User")
                                 .fontWeight(.medium)
-                            if !schoolName.isEmpty {
-                                Text(schoolId)
+                            Text(staff?.email ?? "")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Role
+                    HStack {
+                        Text("Role")
+                        Spacer()
+                        Text(roleDisplayName)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(roleColor.opacity(0.15))
+                            .foregroundColor(roleColor)
+                            .cornerRadius(8)
+                    }
+
+                    // Assigned School
+                    HStack {
+                        Text("Assigned School")
+                        Spacer()
+                        if staff?.isGlobalUser == true {
+                            HStack(spacing: 4) {
+                                Image(systemName: "globe")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .font(.system(.caption, design: .monospaced))
+                                Text("Global Access")
+                            }
+                            .foregroundColor(.purple)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.purple.opacity(0.15))
+                            .cornerRadius(8)
+                        } else {
+                            Text(staff?.schoolId ?? "-")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Current School (for face data sync)
+                    HStack {
+                        Text("Current School")
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(schoolName.isEmpty ? schoolId : schoolName)
+                                .foregroundColor(.secondary)
+                            if !schoolName.isEmpty && schoolName != schoolId {
+                                Text(schoolId)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary.opacity(0.7))
                             }
                         }
                     }
                 } header: {
-                    Text("Connection")
+                    Text("User Profile")
                 } footer: {
-                    Text("Connected to this school's database for face data sync.")
+                    Text("Your account information and permissions.")
                 }
-                
+
                 // MARK: - Face Data Section
                 Section {
                     // Cache Status
@@ -97,12 +175,14 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Face Data Loaded")
                                     .font(.headline)
-                                Text("\(cacheStatus.recordCount) samples from \(cacheStatus.studentCount) students")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                Text(
+                                    "\(cacheStatus.recordCount) samples from \(cacheStatus.studentCount) students"
+                                )
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                             }
                         }
-                        
+
                         HStack {
                             Text("Last Downloaded")
                             Spacer()
@@ -114,14 +194,14 @@ struct SettingsView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                        
+
                         HStack {
                             Text("Cache Size")
                             Spacer()
                             Text("\(cacheStatus.fileSizeKB) KB")
                                 .foregroundColor(.secondary)
                         }
-                        
+
                         HStack {
                             Text("Version")
                             Spacer()
@@ -141,7 +221,7 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    
+
                     // Download Button
                     Button(action: {
                         Task {
@@ -153,33 +233,41 @@ struct SettingsView: View {
                                 ProgressView()
                                     .scaleEffect(0.8)
                                     .padding(.trailing, 8)
-                                
+
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Downloading...")
                                         .fontWeight(.semibold)
                                     if downloadProgress.total > 0 {
-                                        Text("\(downloadProgress.current) / \(downloadProgress.total)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
+                                        Text(
+                                            "\(downloadProgress.current) / \(downloadProgress.total)"
+                                        )
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                     }
                                 }
                             } else {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.title2)
-                                Text(cacheStatus.hasCache ? "Re-download Face Data" : "Download Face Data")
-                                    .fontWeight(.semibold)
+                                Text(
+                                    cacheStatus.hasCache
+                                        ? "Re-download Face Data" : "Download Face Data"
+                                )
+                                .fontWeight(.semibold)
                             }
-                            
+
                             Spacer()
                         }
                     }
                     .disabled(isDownloading)
-                    
+
                     // Clear Cache Button
                     if cacheStatus.hasCache {
-                        Button(role: .destructive, action: {
-                            clearCache()
-                        }) {
+                        Button(
+                            role: .destructive,
+                            action: {
+                                clearCache()
+                            }
+                        ) {
                             HStack {
                                 Image(systemName: "trash")
                                 Text("Clear Cache")
@@ -187,20 +275,22 @@ struct SettingsView: View {
                         }
                         .disabled(isDownloading)
                     }
-                    
+
                     // Status Message
                     if !statusMessage.isEmpty {
                         Text(statusMessage)
                             .font(.caption)
                             .foregroundColor(.green)
                     }
-                    
+
                 } header: {
                     Text("Face Data")
                 } footer: {
-                    Text("Face data is stored locally on your device for offline recognition. Download updates when new students are registered.")
+                    Text(
+                        "Face data is stored locally on your device for offline recognition. Download updates when new students are registered."
+                    )
                 }
-                
+
                 // MARK: - Recognition Settings Section
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
@@ -211,7 +301,7 @@ struct SettingsView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(.blue)
                         }
-                        
+
                         Slider(value: $matchThreshold, in: 0.4...1.0, step: 0.05) {
                             Text("Threshold")
                         } minimumValueLabel: {
@@ -225,7 +315,7 @@ struct SettingsView: View {
                             settingsService.matchThreshold = newValue
                         }
                     }
-                    
+
                     // Quick presets
                     HStack(spacing: 12) {
                         ForEach([0.50, 0.60, 0.75, 0.90], id: \.self) { preset in
@@ -238,20 +328,25 @@ struct SettingsView: View {
                                     .fontWeight(matchThreshold == preset ? .bold : .regular)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
-                                    .background(matchThreshold == preset ? Color.blue : Color.gray.opacity(0.2))
+                                    .background(
+                                        matchThreshold == preset
+                                            ? Color.blue : Color.gray.opacity(0.2)
+                                    )
                                     .foregroundColor(matchThreshold == preset ? .white : .primary)
                                     .cornerRadius(8)
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    
+
                 } header: {
                     Text("Recognition Settings")
                 } footer: {
-                    Text("Higher threshold = more strict matching (fewer false positives). Lower threshold = more lenient (may match wrong person). Default: 60%")
+                    Text(
+                        "Higher threshold = more strict matching (fewer false positives). Lower threshold = more lenient (may match wrong person). Default: 60%"
+                    )
                 }
-                
+
                 // MARK: - Auto Lock Section
                 Section {
                     Picker("Auto-lock Timer", selection: $autoLockTimeout) {
@@ -265,9 +360,11 @@ struct SettingsView: View {
                 } header: {
                     Text("Camera")
                 } footer: {
-                    Text("Automatically lock the camera after this duration of inactivity. Saves battery when no one is scanning. Tap 'Start Camera' to resume.")
+                    Text(
+                        "Automatically lock the camera after this duration of inactivity. Saves battery when no one is scanning. Tap 'Start Camera' to resume."
+                    )
                 }
-                
+
                 // MARK: - Appearance Section
                 Section {
                     Picker("Appearance", selection: $appearanceMode) {
@@ -281,7 +378,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Choose your preferred color scheme. System uses your device settings.")
                 }
-                
+
                 // MARK: - Display Settings Section
                 Section {
                     Toggle(isOn: $showAvatarsInList) {
@@ -294,7 +391,7 @@ struct SettingsView: View {
                     .onChange(of: showAvatarsInList) { oldValue, newValue in
                         settingsService.showAvatarsInList = newValue
                     }
-                    
+
                     Toggle(isOn: $showActivityLog) {
                         HStack {
                             Image(systemName: "text.alignleft")
@@ -310,7 +407,7 @@ struct SettingsView: View {
                     .onChange(of: showActivityLog) { oldValue, newValue in
                         settingsService.showActivityLog = newValue
                     }
-                    
+
                     Toggle(isOn: $showWhatsAppButton) {
                         HStack {
                             Image(systemName: "message.fill")
@@ -329,9 +426,11 @@ struct SettingsView: View {
                 } header: {
                     Text("Display")
                 } footer: {
-                    Text("Activity log shows real-time recognition details. Turn OFF for more camera space.")
+                    Text(
+                        "Activity log shows real-time recognition details. Turn OFF for more camera space."
+                    )
                 }
-                
+
                 // MARK: - Memory Monitor Section
                 Section {
                     // Current Memory Stats
@@ -345,7 +444,7 @@ struct SettingsView: View {
                                 .font(.system(.body, design: .monospaced))
                                 .foregroundColor(.orange)
                         }
-                        
+
                         HStack {
                             Image(systemName: "iphone")
                                 .foregroundColor(.green)
@@ -355,7 +454,7 @@ struct SettingsView: View {
                                 .font(.system(.body, design: .monospaced))
                                 .foregroundColor(.green)
                         }
-                        
+
                         HStack {
                             Image(systemName: "cpu")
                                 .foregroundColor(.blue)
@@ -373,7 +472,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
+
                     // Refresh button
                     Button {
                         refreshMemoryInfo()
@@ -383,9 +482,9 @@ struct SettingsView: View {
                             Text("Refresh Memory Info")
                         }
                     }
-                    
+
                     Divider()
-                    
+
                     // Memory monitor toggle
                     Toggle(isOn: $showMemoryMonitor) {
                         HStack {
@@ -407,7 +506,7 @@ struct SettingsView: View {
                             stopLiveMonitoring()
                         }
                     }
-                    
+
                     // Live Memory Chart (shown when toggle is ON)
                     if showMemoryMonitor {
                         MemoryChartView(memoryHistory: memoryHistory)
@@ -417,9 +516,11 @@ struct SettingsView: View {
                 } header: {
                     Text("Memory")
                 } footer: {
-                    Text("Live monitor shows app memory usage as a floating chart. Stays visible while navigating between screens.")
+                    Text(
+                        "Live monitor shows app memory usage as a floating chart. Stays visible while navigating between screens."
+                    )
                 }
-                
+
                 // MARK: - App Info Section
                 Section {
                     HStack {
@@ -431,10 +532,19 @@ struct SettingsView: View {
                 } header: {
                     Text("About")
                 }
+
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(role: .destructive) {
+                        showLogoutAlert = true
+                    } label: {
+                        Text("Logout")
+                            .foregroundColor(.red)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
                         dismiss()
@@ -454,49 +564,57 @@ struct SettingsView: View {
                 stopLiveMonitoring()
             }
             .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) { }
+                Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
+            }
+            .alert("Logout", isPresented: $showLogoutAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Logout", role: .destructive) {
+                    onLogout?()
+                }
+            } message: {
+                Text("Are you sure you want to logout?")
             }
         }
         .preferredColorScheme(currentColorScheme)
     }
-    
+
     // MARK: - Actions
-    
+
     private func loadCacheStatus() {
         cacheStatus = cacheService.getCacheStatus()
     }
-    
+
     private func refreshMemoryInfo() {
         currentMemoryInfo = getMemoryInfo()
     }
-    
+
     private func startLiveMonitoring() {
         // Get initial reading
         let info = getMemoryInfo()
         currentMemoryInfo = info
         memoryHistory = [info]
-        
+
         // Start timer for continuous updates
         memoryTimer?.invalidate()
         memoryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             let newInfo = getMemoryInfo()
             currentMemoryInfo = newInfo
             memoryHistory.append(newInfo)
-            
+
             // Keep last 300 samples (5 minutes)
             if memoryHistory.count > 300 {
                 memoryHistory.removeFirst()
             }
         }
     }
-    
+
     private func stopLiveMonitoring() {
         memoryTimer?.invalidate()
         memoryTimer = nil
     }
-    
+
     private func getMemoryInfo() -> MemoryInfo {
         // Get app memory
         var info = mach_task_basic_info()
@@ -507,22 +625,26 @@ struct SettingsView: View {
             }
         }
         let appMemory = kerr == KERN_SUCCESS ? Double(info.resident_size) / 1024.0 / 1024.0 : 0
-        
+
         // Get device memory
         let totalMemory = Double(ProcessInfo.processInfo.physicalMemory) / 1024.0 / 1024.0
-        
+
         var pageSize: vm_size_t = 0
         host_page_size(mach_host_self(), &pageSize)
-        
+
         var vmStats = vm_statistics64()
-        var vmCount = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        var vmCount = mach_msg_type_number_t(
+            MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
         let vmKerr = withUnsafeMutablePointer(to: &vmStats) {
             $0.withMemoryRebound(to: integer_t.self, capacity: Int(vmCount)) {
                 host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &vmCount)
             }
         }
-        let freeMemory = vmKerr == KERN_SUCCESS ? Double(vmStats.free_count + vmStats.inactive_count) * Double(pageSize) / 1024.0 / 1024.0 : 0
-        
+        let freeMemory =
+            vmKerr == KERN_SUCCESS
+            ? Double(vmStats.free_count + vmStats.inactive_count) * Double(pageSize) / 1024.0
+                / 1024.0 : 0
+
         return MemoryInfo(
             timestamp: Date(),
             appUsedMB: appMemory,
@@ -530,36 +652,37 @@ struct SettingsView: View {
             deviceTotalMB: totalMemory
         )
     }
-    
+
     private func downloadFaceData() async {
         isDownloading = true
         statusMessage = ""
         downloadProgress = (0, 0)
-        
+
         do {
             // Clear existing cache first
             try? cacheService.clearCache()
-            
+
             // Download face data
-            let faceData = try await firebaseService.downloadFaceData(schoolId: schoolId) { current, total in
+            let faceData = try await firebaseService.downloadFaceData(schoolId: schoolId) {
+                current, total in
                 Task { @MainActor in
                     downloadProgress = (current, total)
                 }
             }
-            
+
             // Get version
             let version = try await firebaseService.getFaceDataVersion(schoolId: schoolId)
-            
+
             // Save to cache
             try cacheService.saveCache(faceData, version: version)
-            
+
             await MainActor.run {
                 loadCacheStatus()
                 statusMessage = "✅ Downloaded \(faceData.count) face records"
                 isDownloading = false
                 onDownloadComplete?()
             }
-            
+
         } catch {
             await MainActor.run {
                 errorMessage = error.localizedDescription
@@ -568,7 +691,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     private func clearCache() {
         do {
             try cacheService.clearCache()
@@ -585,7 +708,7 @@ struct SettingsView: View {
 
 struct MemoryChartView: View {
     let memoryHistory: [MemoryInfo]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Chart header
@@ -600,14 +723,14 @@ struct MemoryChartView: View {
                         .foregroundColor(memoryColor(for: latest.appUsedMB))
                 }
             }
-            
+
             // Chart
             if #available(iOS 16.0, *) {
                 chartView
             } else {
                 fallbackChartView
             }
-            
+
             // Time axis labels
             HStack {
                 Text("-5m")
@@ -626,12 +749,12 @@ struct MemoryChartView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
-    
+
     @available(iOS 16.0, *)
     private var chartView: some View {
         let maxValue = max((memoryHistory.map(\.appUsedMB).max() ?? 100) * 1.1, 50)
         let minValue = max((memoryHistory.map(\.appUsedMB).min() ?? 0) * 0.9, 0)
-        
+
         return Chart {
             ForEach(Array(memoryHistory.enumerated()), id: \.element.id) { index, info in
                 LineMark(
@@ -646,7 +769,7 @@ struct MemoryChartView: View {
                     )
                 )
                 .lineStyle(StrokeStyle(lineWidth: 2))
-                
+
                 AreaMark(
                     x: .value("Index", index),
                     y: .value("MB", info.appUsedMB)
@@ -678,21 +801,23 @@ struct MemoryChartView: View {
         .chartXAxis(.hidden)
         .frame(height: 100)
     }
-    
+
     private var fallbackChartView: some View {
         GeometryReader { geometry in
             if !memoryHistory.isEmpty {
                 let maxValue = memoryHistory.map(\.appUsedMB).max() ?? 100
                 let minValue = max(0, (memoryHistory.map(\.appUsedMB).min() ?? 0) - 10)
                 let range = max(maxValue - minValue, 1)
-                
+
                 Path { path in
                     let points = memoryHistory.enumerated().map { index, info -> CGPoint in
                         let x = CGFloat(index) / 300.0 * geometry.size.width
-                        let y = (1 - CGFloat((info.appUsedMB - minValue) / range)) * geometry.size.height
+                        let y =
+                            (1 - CGFloat((info.appUsedMB - minValue) / range))
+                            * geometry.size.height
                         return CGPoint(x: x, y: y)
                     }
-                    
+
                     if let first = points.first {
                         path.move(to: first)
                         for point in points.dropFirst() {
@@ -712,7 +837,7 @@ struct MemoryChartView: View {
         }
         .frame(height: 100)
     }
-    
+
     private func memoryColor(for mb: Double) -> Color {
         if mb > 300 {
             return .red

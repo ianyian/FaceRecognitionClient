@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Attendance - Smart Attendance Tracking</title>
+    <meta name="description" content="Transform attendance tracking with AI-powered face recognition. Fast, secure, and easy to use for tuition centers and schools.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f7;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #007aff 0%, #0051d5 100%);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+            border-radius: 12px;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 20px rgba(0,122,255,0.3);
+        }
+        
+        header h1 {
+            font-size: 3em;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+        
+        header p {
+            font-size: 1.3em;
+            opacity: 0.95;
+            margin-bottom: 30px;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: white;
+            color: #007aff;
+            padding: 15px 40px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1em;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .feature-card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+        
+        .feature-icon {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+        }
+        
+        .feature-card h3 {
+            color: #1d1d1f;
+            font-size: 1.4em;
+            margin-bottom: 10px;
+        }
+        
+        .feature-card p {
+            color: #515154;
+        }
+        
+        .content-section {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .content-section h2 {
+            color: #1d1d1f;
+            font-size: 2em;
+            margin-bottom: 20px;
+        }
+        
+        .content-section p {
+            color: #515154;
+            margin-bottom: 15px;
+            font-size: 1.05em;
+        }
+        
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .quick-link {
+            background: #f9f9f9;
+            padding: 25px;
+            border-radius: 8px;
+            text-align: center;
+            text-decoration: none;
+            color: #007aff;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .quick-link:hover {
+            background: #e8f4ff;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6e6e73;
+            font-size: 0.9em;
+        }
+        
+        footer a {
+            color: #007aff;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2em;
+            }
+            
+            header p {
+                font-size: 1.1em;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📸 Face Attendance</h1>
+            <p>Transform Your Attendance Tracking with AI-Powered Face Recognition</p>
+            <a href="https://apps.apple.com/app/face-attendance/id123456789" class="cta-button">Download on App Store</a>
+        </header>
+        
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Instant Recognition</h3>
+                <p>Lightning-fast student identification in seconds using advanced MediaPipe AI technology.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🏫</div>
+                <h3>Multi-School Support</h3>
+                <p>Perfect for staff working across multiple locations. Seamlessly switch between tuition centers.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Privacy First</h3>
+                <p>Face data processed locally on your device. Encrypted cloud storage with Firebase.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3>Offline Capable</h3>
+                <p>Continue recording attendance without internet. Automatic sync when connection is restored.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">👥</div>
+                <h3>Role-Based Access</h3>
+                <p>Admin, Reception, and Teacher roles with appropriate permission levels for secure operation.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Real-Time Reports</h3>
+                <p>Instant attendance history and statistics. Track patterns over time with detailed analytics.</p>
+            </div>
+        </div>
+        
+        <div class="content-section">
+            <h2>About Face Attendance</h2>
+            <p>Face Attendance brings cutting-edge facial recognition technology to tuition centers, schools, and training programs. Say goodbye to manual roll calls and time-consuming attendance sheets.</p>
+            
+            <p>Our application uses advanced MediaPipe AI technology to provide instant, accurate student identification while maintaining the highest standards of privacy and security. All facial processing happens locally on your device, and we never store actual photographs.</p>
+            
+            <p>Trusted by educational institutions worldwide, Face Attendance helps save hours of administrative time while improving accuracy and providing a modern, professional solution for attendance tracking.</p>
+        </div>
+        
+        <div class="content-section">
+            <h2>How It Works</h2>
+            <ol style="color: #515154; padding-left: 20px; line-height: 2;">
+                <li><strong>Staff login</strong> with secure credentials</li>
+                <li><strong>Select your tuition center</strong> from the list</li>
+                <li><strong>Point camera</strong> at student's face</li>
+                <li><strong>Instant recognition</strong> and attendance logged automatically</li>
+                <li><strong>View and manage</strong> attendance records in real-time</li>
+            </ol>
+        </div>
+        
+        <div class="content-section">
+            <h2>System Requirements</h2>
+            <ul style="color: #515154; padding-left: 20px; line-height: 2;">
+                <li>iPhone or iPad with camera</li>
+                <li>iOS 15.0 or later</li>
+                <li>Internet connection for initial setup</li>
+                <li>Staff credentials from your administrator</li>
+            </ul>
+        </div>
+        
+        <div class="quick-links">
+            <a href="support.html" class="quick-link">📖 Support & FAQs</a>
+            <a href="privacy.html" class="quick-link">🔐 Privacy Policy</a>
+            <a href="terms.html" class="quick-link">📄 Terms of Service</a>
+            <a href="mailto:support@faceattendance.com" class="quick-link">✉️ Contact Support</a>
+        </div>
+        
+        <footer>
+            <p>&copy; 2025 Face Attendance. All rights reserved.</p>
+            <p>
+                <a href="support.html">Support</a> |
+                <a href="privacy.html">Privacy Policy</a> |
+                <a href="terms.html">Terms of Service</a> |
+                <a href="mailto:support@faceattendance.com">Contact</a>
+            </p>
+            <p style="margin-top: 20px; font-size: 0.85em;">
+                Made with ❤️ for educators who deserve better tools.
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -36,7 +36,7 @@ struct CameraView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color(.systemBackground).ignoresSafeArea()
 
             VStack(spacing: 0) {
                 topBar
@@ -172,7 +172,7 @@ struct CameraView: View {
                     .font(.title3)
                     .padding(10)
                     .background(.ultraThinMaterial)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .clipShape(Circle())
             }
 
@@ -184,12 +184,12 @@ struct CameraView: View {
                     .font(.title3)
                     .padding(10)
                     .background(.ultraThinMaterial)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .clipShape(Circle())
             }
         }
         .padding()
-        .background(Color.black.opacity(0.3))
+        .background(Color.primary.opacity(0.1))
     }
 
     @ViewBuilder
@@ -204,7 +204,7 @@ struct CameraView: View {
                     Text("\(viewModel.cacheStatus.studentCount)")
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -266,7 +266,7 @@ struct CameraView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial)
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .cornerRadius(20)
             }
             .disabled(isLoadingSchools || availableSchools.isEmpty)
@@ -283,7 +283,7 @@ struct CameraView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(.ultraThinMaterial)
-            .foregroundColor(.white)
+            .foregroundColor(.primary)
             .cornerRadius(20)
         }
     }
@@ -544,12 +544,12 @@ struct CameraView: View {
                 VStack(spacing: 20) {
                     Image(systemName: "camera.fill")
                         .font(.system(size: 60))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(.primary.opacity(0.7))
 
                     Text("Camera Ready")
                         .font(.title2)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
 
                     Button(action: {
                         Task {
@@ -590,11 +590,12 @@ struct CameraView: View {
                     } else {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 20))
-                            .foregroundColor(.gray)
+                            .foregroundColor(.primary)
 
                         Text("Screen Locked")
                             .font(.subheadline)
                             .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                     }
                 }
 
@@ -731,26 +732,12 @@ struct ResultPopupView: View {
                     .font(.system(size: 80))
                     .foregroundColor(status.color)
 
-                // Title
-                Text(status.title)
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-
-                // Message
-                Text(status.message)
-                    .font(.headline)
-                    .foregroundColor(.white.opacity(0.9))
+                // Student name (larger, without "Welcome" prefix)
+                Text(studentName)
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.primary)
                     .multilineTextAlignment(.center)
-
-                // Details (for success)
-                if case .success = status {
-                    VStack(spacing: 8) {
-                        Text("Time: \(processingTime)")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                }
+                    .padding(.horizontal, 10)
 
                 // Buttons
                 VStack(spacing: 12) {
@@ -799,7 +786,7 @@ struct ResultPopupView: View {
                 }
                 .padding(.top, 10)
 
-                // Screen-Lock button (moved to bottom with more spacing)
+                // Screen-Lock button (much more spacing from buttons above)
                 Button {
                     onLock()
                 } label: {
@@ -823,7 +810,7 @@ struct ResultPopupView: View {
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
                 .padding(.horizontal, 10)
-                .padding(.top, 16)
+                .padding(.top, 70)
             }
             .padding(30)
             .background(

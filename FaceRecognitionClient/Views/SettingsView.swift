@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var showMemoryMonitor: Bool
     @State private var showActivityLog: Bool
     @State private var showWhatsAppButton: Bool
+    @State private var autoRefreshAfterStudentChange: Bool
     @State private var cacheStatus: FaceDataCacheStatus = .empty
     @State private var isDownloading = false
     @State private var downloadProgress: (current: Int, total: Int) = (0, 0)
@@ -32,7 +33,7 @@ struct SettingsView: View {
     @State private var memoryTimer: Timer?
     @State private var showLogoutAlert = false
 
-    @AppStorage("appearanceMode") private var appearanceMode: Int = 0  // 0=System, 1=Light, 2=Dark
+    @AppStorage("appearanceMode") private var appearanceMode: Int = 0  // 0=System, 1=Light, 2=Dark (default: System)
 
     let staff: Staff?
     let schoolId: String
@@ -64,6 +65,8 @@ struct SettingsView: View {
         self._showMemoryMonitor = State(initialValue: SettingsService.shared.showMemoryMonitor)
         self._showActivityLog = State(initialValue: SettingsService.shared.showActivityLog)
         self._showWhatsAppButton = State(initialValue: SettingsService.shared.showWhatsAppButton)
+        self._autoRefreshAfterStudentChange = State(
+            initialValue: SettingsService.shared.autoRefreshAfterStudentChange)
     }
 
     private var currentColorScheme: ColorScheme? {
@@ -423,11 +426,27 @@ struct SettingsView: View {
                     .onChange(of: showWhatsAppButton) { oldValue, newValue in
                         settingsService.showWhatsAppButton = newValue
                     }
+
+                    Toggle(isOn: $autoRefreshAfterStudentChange) {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                                .foregroundColor(.blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Auto Refresh Face Data")
+                                Text("Automatically refresh after creating/editing students")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .onChange(of: autoRefreshAfterStudentChange) { oldValue, newValue in
+                        settingsService.autoRefreshAfterStudentChange = newValue
+                    }
                 } header: {
                     Text("Display")
                 } footer: {
                     Text(
-                        "Activity log shows real-time recognition details. Turn OFF for more camera space."
+                        "Activity log shows real-time recognition details. Auto refresh ensures face data is always up-to-date (turn OFF when adding many students)."
                     )
                 }
 

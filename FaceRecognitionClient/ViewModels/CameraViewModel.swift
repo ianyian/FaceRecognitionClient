@@ -77,6 +77,9 @@ class CameraViewModel: ObservableObject {
     @Published var isPaused: Bool = false  // Pause camera capture until user confirms
     @Published var matchedParentPhone: String? = nil  // Parent phone for WhatsApp button
 
+    // Matched student info for login picture saving
+    private var matchedStudentId: String? = nil  // Student ID of the matched face
+
     // Model loading state
     @Published var isModelLoading: Bool = true
 
@@ -123,6 +126,16 @@ class CameraViewModel: ObservableObject {
                     print("❌ Failed to load MediaPipe model: \(error.localizedDescription)")
                 }
             }
+        }
+
+        // Listen for face data refresh notifications (from StudentViewModel)
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("FaceDataRefreshed"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reloadCache()
+            print("🔄 Cache reloaded from auto-refresh notification")
         }
     }
 
@@ -338,9 +351,11 @@ class CameraViewModel: ObservableObject {
 
                 if let match = matchResult.match {
                     self.status = .success(match.studentName)
-                    self.studentName = "\(match.studentName) (\(match.similarityPercentage))"
+                    self.studentName = match.studentName
+                    self.matchedStudentId = match.studentId  // Store matched student ID for picture saving
                 } else {
                     self.status = .failed("No match found")
+                    self.matchedStudentId = nil  // Clear on failed match
                 }
                 self.showPopupWithAutoLock()
             }
@@ -526,7 +541,7 @@ class CameraViewModel: ObservableObject {
         let dateFormatter = DateFormatter()
         dateFormatter.timeStyle = .medium
         lastCheckTime = dateFormatter.string(from: match.matchTimestamp)
-        studentName = "\(match.studentName) (\(match.similarityPercentage))"
+        studentName = match.studentName
 
         // Calculate processing time
         if let startTime = uploadStartTime {
@@ -554,6 +569,7 @@ class CameraViewModel: ObservableObject {
         // Set on main actor to ensure UI sees the update
         await MainActor.run {
             matchedParentPhone = fetchedPhone
+            matchedStudentId = match.studentId  // Store matched student ID for picture saving
         }
 
         // Provide haptic feedback
@@ -592,6 +608,44 @@ class CameraViewModel: ObservableObject {
             generator.notificationOccurred(.error)
         default:
             break
+        }
+    }
+
+    // MARK: - Login Picture Saving
+
+    /// Save login picture to Firestore for parent verification
+    /// Called when user confirms result (WhatsApp, Next Capture, Lock, Auto-Lock)
+    private func saveLoginPictureIfSuccess() async {
+        // Only save for successful matches
+        guard case .success = status else {
+            return
+        }
+
+        // Ensure we have captured image and matched student
+        guard let image = capturedImage,
+            let studentId = matchedStudentId,
+            let schoolId = school?.id
+        else {
+            print("⚠️ Cannot save login picture: missing image, studentId, or schoolId")
+            return
+        }
+
+        // Save picture in background
+        Task.detached { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let pictureId = try await self.firebaseService.saveLoginPicture(
+                    image: image,
+                    studentId: studentId,
+                    schoolId: schoolId
+                )
+                print("✅ Login picture saved: \(pictureId)")
+                await self.addLog("📸 Picture saved for parent verification")
+            } catch {
+                print("⚠️ Failed to save login picture: \(error.localizedDescription)")
+                // Don't show error to user - this is a background operation
+            }
         }
     }
 
@@ -644,12 +698,18 @@ class CameraViewModel: ObservableObject {
     private func performPopupAutoLock() {
         cancelPopupAutoLockTimer()
 
+        // Save login picture for parent verification (if successful match)
+        Task {
+            await saveLoginPictureIfSuccess()
+        }
+
         // Close popup
         showResultPopup = false
         isPaused = false
         capturedImage = nil
         showFaceBox = false
         isComparing = false
+        matchedStudentId = nil  // Clear matched student
 
         // Lock camera (same as manual lock)
         stopCamera()
@@ -664,12 +724,18 @@ class CameraViewModel: ObservableObject {
         // Cancel popup auto-lock timer
         cancelPopupAutoLockTimer()
 
+        // Save login picture for parent verification (if successful match)
+        Task {
+            await saveLoginPictureIfSuccess()
+        }
+
         showResultPopup = false
         isPaused = false
         capturedImage = nil  // Clear captured image
         status = .scanning
         showFaceBox = false
         isComparing = false
+        matchedStudentId = nil  // Clear matched student
         // Don't clear the log - keep history for review
         // statusLog.removeAll()
 
@@ -772,6 +838,11 @@ class CameraViewModel: ObservableObject {
         // Cancel popup auto-lock timer
         cancelPopupAutoLockTimer()
 
+        // Save login picture for parent verification (if successful match)
+        Task {
+            await saveLoginPictureIfSuccess()
+        }
+
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
@@ -782,6 +853,7 @@ class CameraViewModel: ObservableObject {
         capturedImage = nil
         showFaceBox = false
         isComparing = false
+        matchedStudentId = nil  // Clear matched student
 
         // Stop camera
         stopCamera()

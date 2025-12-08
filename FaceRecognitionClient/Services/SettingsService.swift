@@ -10,11 +10,11 @@ import Foundation
 
 class SettingsService {
     static let shared = SettingsService()
-    
+
     private let defaults = UserDefaults.standard
-    
+
     // MARK: - Keys
-    
+
     private enum Keys {
         static let matchThreshold = "face_match_threshold"
         static let schoolId = "school_id"
@@ -24,10 +24,11 @@ class SettingsService {
         static let showMemoryMonitor = "show_memory_monitor"
         static let showActivityLog = "show_activity_log"
         static let showWhatsAppButton = "show_whatsapp_button"
+        static let autoRefreshAfterStudentChange = "auto_refresh_after_student_change"
     }
-    
+
     // MARK: - Match Threshold
-    
+
     /// Face match similarity threshold (0.0 - 1.0)
     /// Default: 0.60 (60%)
     var matchThreshold: Double {
@@ -43,14 +44,14 @@ class SettingsService {
             print("⚙️ Match threshold set to: \(String(format: "%.0f%%", clampedValue * 100))")
         }
     }
-    
+
     /// Match threshold as percentage string
     var matchThresholdPercentage: String {
         return String(format: "%.0f%%", matchThreshold * 100)
     }
-    
+
     // MARK: - School ID
-    
+
     /// Current school ID
     /// Default: "main-tuition-center"
     var schoolId: String {
@@ -62,9 +63,9 @@ class SettingsService {
             print("⚙️ School ID set to: \(newValue)")
         }
     }
-    
+
     // MARK: - Auto Download
-    
+
     /// Whether to auto-download face data on login
     /// Default: false
     var autoDownloadOnLogin: Bool {
@@ -76,9 +77,9 @@ class SettingsService {
             print("⚙️ Auto download on login: \(newValue)")
         }
     }
-    
+
     // MARK: - Auto Lock
-    
+
     /// Auto-lock timeout in seconds (0 = disabled)
     /// Default: 5 seconds
     var autoLockTimeout: Int {
@@ -95,18 +96,18 @@ class SettingsService {
             print("⚙️ Auto-lock timeout set to: \(newValue) seconds")
         }
     }
-    
+
     /// Auto-lock timeout options for UI
     static let autoLockOptions: [(label: String, value: Int)] = [
         ("Off", 0),
         ("3 sec", 3),
         ("5 sec", 5),
         ("10 sec", 10),
-        ("30 sec", 30)
+        ("30 sec", 30),
     ]
-    
+
     // MARK: - Avatar Display
-    
+
     /// Whether to show avatars in student list (default OFF to save memory)
     var showAvatarsInList: Bool {
         get {
@@ -121,13 +122,13 @@ class SettingsService {
             print("⚙️ Show avatars in list: \(newValue)")
         }
     }
-    
+
     // MARK: - Memory Monitor
-    
+
     /// Whether to show persistent memory monitor overlay
     /// NOTE: This is NOT persisted - always starts OFF to save resources
     private var _showMemoryMonitor = false
-    
+
     var showMemoryMonitor: Bool {
         get {
             return _showMemoryMonitor
@@ -139,9 +140,9 @@ class SettingsService {
             print("⚙️ Show memory monitor: \(newValue) (session only, not saved)")
         }
     }
-    
+
     // MARK: - Activity Log
-    
+
     /// Whether to show activity log on main camera screen (default ON for troubleshooting)
     var showActivityLog: Bool {
         get {
@@ -156,9 +157,9 @@ class SettingsService {
             print("⚙️ Show activity log: \(newValue)")
         }
     }
-    
+
     // MARK: - WhatsApp Button
-    
+
     /// Whether to show WhatsApp Parent button on success popup (default ON)
     var showWhatsAppButton: Bool {
         get {
@@ -173,9 +174,26 @@ class SettingsService {
             print("⚙️ Show WhatsApp button: \(newValue)")
         }
     }
-    
+
+    // MARK: - Auto Refresh Face Data
+
+    /// Whether to auto-refresh face data after student create/edit (default ON)
+    var autoRefreshAfterStudentChange: Bool {
+        get {
+            // Default true (on) - check if key exists
+            if defaults.object(forKey: Keys.autoRefreshAfterStudentChange) == nil {
+                return true  // Default ON
+            }
+            return defaults.bool(forKey: Keys.autoRefreshAfterStudentChange)
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.autoRefreshAfterStudentChange)
+            print("⚙️ Auto refresh after student change: \(newValue)")
+        }
+    }
+
     // MARK: - Reset
-    
+
     func resetToDefaults() {
         defaults.removeObject(forKey: Keys.matchThreshold)
         defaults.removeObject(forKey: Keys.autoDownloadOnLogin)
@@ -184,9 +202,10 @@ class SettingsService {
         defaults.removeObject(forKey: Keys.showMemoryMonitor)
         defaults.removeObject(forKey: Keys.showActivityLog)
         defaults.removeObject(forKey: Keys.showWhatsAppButton)
+        defaults.removeObject(forKey: Keys.autoRefreshAfterStudentChange)
         // Don't reset schoolId
         print("⚙️ Settings reset to defaults")
     }
-    
+
     private init() {}
 }

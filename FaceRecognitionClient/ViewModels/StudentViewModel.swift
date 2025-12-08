@@ -88,6 +88,8 @@ class StudentViewModel: ObservableObject {
     private let firebaseService = FirebaseService.shared
     private let db = Firestore.firestore()
     private let mediaPipeService = MediaPipeFaceLandmarkerService.shared
+    private let cacheService = FaceDataCacheService.shared
+    private let settingsService = SettingsService.shared
     private var schoolId: String
 
     // Staff context for permission checking
@@ -450,6 +452,11 @@ class StudentViewModel: ObservableObject {
 
         showSuccess("\(formData.studentFirstName) has been registered!")
         print("✅ Created student: \(studentId) with \(faceEncodings.count) face encodings")
+
+        // Auto-refresh face data if setting is enabled
+        if settingsService.autoRefreshAfterStudentChange {
+            await autoRefreshFaceData(reason: "Student created")
+        }
     }
 
     private func updateStudent() async throws {
@@ -537,6 +544,42 @@ class StudentViewModel: ObservableObject {
 
         showSuccess("\(formData.studentFirstName) has been updated!")
         print("✅ Updated student: \(studentId)")
+
+        // Auto-refresh face data if setting is enabled
+        if settingsService.autoRefreshAfterStudentChange {
+            await autoRefreshFaceData(reason: "Student updated")
+        }
+    }
+
+    // MARK: - Auto Refresh Face Data
+
+    /// Auto-refresh face data after student create/edit if setting is enabled
+    private func autoRefreshFaceData(reason: String) async {
+        print("🔄 Auto-refreshing face data: \(reason)")
+
+        do {
+            // Download latest face data from Firestore
+            let faceData = try await firebaseService.downloadFaceData(schoolId: schoolId)
+
+            // Get version
+            let version = try await firebaseService.getFaceDataVersion(schoolId: schoolId)
+
+            // Save to cache
+            try cacheService.saveCache(faceData, version: version)
+
+            print("✅ Face data auto-refreshed: \(faceData.count) records")
+
+            // Post notification so CameraViewModel can reload cache
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("FaceDataRefreshed"),
+                    object: nil
+                )
+            }
+        } catch {
+            print("⚠️ Auto-refresh face data failed: \(error.localizedDescription)")
+            // Don't show error to user - this is a background operation
+        }
     }
 
     private func saveFaceSamples(studentId: String) async throws {

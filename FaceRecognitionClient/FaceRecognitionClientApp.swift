@@ -47,6 +47,15 @@ struct FaceRecognitionClientApp: App {
     // Register app delegate for Firebase setup
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject var authService = AuthService.shared  // Use the shared singleton instance
+    @AppStorage("appearanceMode") private var appearanceMode: Int = 0  // 0=System, 1=Light, 2=Dark (default: System)
+
+    private var currentColorScheme: ColorScheme? {
+        switch appearanceMode {
+        case 1: return .light
+        case 2: return .dark
+        default: return nil  // System default
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -95,6 +104,7 @@ struct FaceRecognitionClientApp: App {
                     }
                 }
             }
+            .preferredColorScheme(currentColorScheme)
         }
     }
 }

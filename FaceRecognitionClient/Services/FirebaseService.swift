@@ -212,10 +212,13 @@ class FirebaseService: ObservableObject {
         print("✅ Attendance recorded for student \(studentId)")
     }
 
-    // MARK: - Login Pictures (Temporary for Testing)
+    // MARK: - Login Pictures (For Parent Verification)
 
-    func saveLoginPicture(image: UIImage, staffId: String, schoolId: String) async throws -> String
-    {
+    /// Save a successful face detection picture for parent verification
+    /// This is called after successful face recognition to keep a record for parents
+    func saveLoginPicture(
+        image: UIImage, studentId: String, schoolId: String, attendanceId: String? = nil
+    ) async throws -> String {
         // Resize image to fit within Firestore limits (1MB per field)
         // Target: ~800KB after base64 encoding to leave room for overhead
         let resizedImage = resizeImageToFitFirestore(image: image, maxSizeKB: 600)
@@ -249,14 +252,19 @@ class FirebaseService: ObservableObject {
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-        let pictureData: [String: Any] = [
+        var pictureData: [String: Any] = [
             "id": pictureId,
-            "staffId": staffId,
+            "studentId": studentId,
             "schoolId": schoolId,
             "imageData": dataUri,
             "capturedAt": isoFormatter.string(from: Date()),
             "timestamp": FieldValue.serverTimestamp(),
         ]
+
+        // Add optional attendanceId if provided
+        if let attendanceId = attendanceId {
+            pictureData["attendanceId"] = attendanceId
+        }
 
         // Save to nested path: /schools/{schoolId}/login-pictures/{pictureId}
         try await db.collection("schools")
@@ -265,7 +273,9 @@ class FirebaseService: ObservableObject {
             .document(pictureId)
             .setData(pictureData)
 
-        print("✅ Login picture saved to /schools/\(schoolId)/login-pictures/\(pictureId)")
+        print(
+            "✅ Login picture saved to /schools/\(schoolId)/login-pictures/\(pictureId) for student \(studentId)"
+        )
         return pictureId
     }
 

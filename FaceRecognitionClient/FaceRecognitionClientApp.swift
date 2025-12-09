@@ -19,7 +19,7 @@ class FaceRecognitionAppCheckProviderFactory: NSObject, AppCheckProviderFactory 
             return debugProvider
         #else
             // For release builds, use DeviceCheck
-            return AppCheckDeviceCheckProvider(app: app)
+            return DeviceCheckProvider(app: app)
         #endif
     }
 }

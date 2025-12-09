@@ -108,7 +108,7 @@ xcodebuild archive \
     -configuration "$CONFIGURATION" \
     -archivePath "$ARCHIVE_PATH" \
     -destination 'generic/platform=iOS' \
-    DEVELOPMENT_TEAM="4CQ2C6B32M" \
+    DEVELOPMENT_TEAM="N4Q66J8W25" \
     CODE_SIGN_IDENTITY="Apple Distribution" \
     | xcpretty
 

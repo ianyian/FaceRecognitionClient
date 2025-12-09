@@ -88,7 +88,7 @@ Click **Next**
 ### 1.5 Re-sign Your App
 
 Choose automatic signing:
-- Select your Team: **4CQ2C6B32M**
+- Select your Team: **N4Q66J8W25** (Zebraline Technology)
 - Provisioning Profile: **Automatically manage signing**
 
 Click **Next**

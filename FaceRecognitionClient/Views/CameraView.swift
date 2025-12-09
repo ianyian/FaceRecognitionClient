@@ -140,7 +140,7 @@ struct CameraView: View {
                         viewModel.confirmAndResume()
                     },
                     onWhatsApp: {
-                        viewModel.confirmAndResume()
+                        viewModel.sendWhatsAppAndResume()
                     },
                     onLock: {
                         viewModel.manualLockFromPopup()
@@ -744,7 +744,6 @@ struct ResultPopupView: View {
                     // WhatsApp button (only for success with parent phone and setting enabled)
                     if canShowWhatsApp, let phone = parentPhone {
                         Button {
-                            openWhatsApp(phone: phone)
                             onWhatsApp()
                         } label: {
                             HStack(spacing: 10) {

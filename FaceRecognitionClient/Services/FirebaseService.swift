@@ -140,12 +140,24 @@ class FirebaseService: ObservableObject {
     /// Used for login dropdown and global user school switching
     func loadAllSchools() async throws -> [School] {
         print("🔍 Fetching schools from Firestore...")
+        print("🔍 Auth state: \(Auth.auth().currentUser?.uid ?? "NOT AUTHENTICATED")")
 
         // First try to get all schools, then filter by isActive
         // This handles cases where isActive field might not exist
-        let querySnapshot = try await db.collection("schools").getDocuments()
-
-        print("📊 Found \(querySnapshot.documents.count) total school documents")
+        // Force fetch from server to bypass cache and get latest rules
+        let querySnapshot: QuerySnapshot
+        do {
+            querySnapshot = try await db.collection("schools").getDocuments(source: .server)
+            print("📊 Found \(querySnapshot.documents.count) total school documents")
+        } catch {
+            print("❌ Error fetching schools: \(error)")
+            print("❌ Error type: \(type(of: error))")
+            if let nsError = error as NSError? {
+                print("❌ Error domain: \(nsError.domain), code: \(nsError.code)")
+                print("❌ Error userInfo: \(nsError.userInfo)")
+            }
+            throw error
+        }
 
         var schools: [School] = []
 

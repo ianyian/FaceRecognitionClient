@@ -1,0 +1,184 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================================
+    // Helper Functions
+    // ============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Safely get staff profile - returns null if not exists
+    function getStaffProfile() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+
+    // Check if user has a staff profile
+    function hasStaffProfile() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    }
+
+    // Check if user is a global admin (can access ALL schools)
+    function isGlobalAdmin() {
+      return hasStaffProfile() && 
+             getStaffProfile().role == 'admin' && 
+             getStaffProfile().schoolId == 'global';
+    }
+
+    // Check if user is admin of a specific school
+    function isSchoolAdmin(schoolId) {
+      return hasStaffProfile() && 
+             getStaffProfile().role == 'admin' && 
+             getStaffProfile().schoolId == schoolId;
+    }
+
+    // Check if user is any type of admin (global or school-specific)
+    function isAdmin() {
+      return hasStaffProfile() && getStaffProfile().role == 'admin';
+    }
+
+    // Check if user can access a specific school (global admin OR assigned to that school)
+    function canAccessSchool(schoolId) {
+      return hasStaffProfile() && 
+             (getStaffProfile().schoolId == 'global' || getStaffProfile().schoolId == schoolId);
+    }
+
+    // Check if user is staff of a specific school (or global)
+    function isStaffOf(schoolId) {
+      return canAccessSchool(schoolId);
+    }
+
+    // Check if user is reception role (and can access the school)
+    function isReceptionOf(schoolId) {
+      return hasStaffProfile() && 
+             getStaffProfile().role == 'reception' && 
+             canAccessSchool(schoolId);
+    }
+
+    // Check if user is admin who can access the school
+    function isAdminOf(schoolId) {
+      return hasStaffProfile() && 
+             getStaffProfile().role == 'admin' && 
+             canAccessSchool(schoolId);
+    }
+
+    // ============================================================
+    // Staff Collection
+    // - Users can read/write their own profile (for lastLogin updates)
+    // - Global admins can read/write all staff profiles
+    // - School admins can only read/write staff in their school
+    // ============================================================
+    match /staff/{userId} {
+      // Read: own profile, OR global admin, OR school admin for same school
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isGlobalAdmin() ||
+        (isAdmin() && resource.data.schoolId == getStaffProfile().schoolId)
+      );
+      
+      // Write own profile (for lastLogin updates)
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Global admins can write any staff profile
+      // School admins can write staff in their school only
+      allow write: if isGlobalAdmin() || 
+                      (isAdmin() && request.resource.data.schoolId == getStaffProfile().schoolId);
+    }
+
+    // ============================================================
+    // Schools Collection
+    // ============================================================
+    match /schools/{schoolId} {
+      // Allow anyone to read schools list (needed for login screen)
+      // This only exposes basic school info (id, name, isActive)
+      allow read: if true;
+      
+      // Any admin can create, update, or delete schools
+      allow create, update, delete: if isAdmin();
+
+      // Students Subcollection
+      match /students/{studentId} {
+        allow read: if isStaffOf(schoolId);
+        // Admins can create/update in any school, Reception only in their school
+        allow create, update: if isAdmin() || (isStaffOf(schoolId) && isReceptionOf(schoolId));
+        // Any admin can delete
+        allow delete: if isAdmin();
+
+        // Face Samples
+        match /faceSamples/{sampleId} {
+          allow read: if isStaffOf(schoolId);
+          allow create, update: if isAdmin() || (isStaffOf(schoolId) && isReceptionOf(schoolId));
+          allow delete: if isAdmin();
+        }
+        
+        // Attendance Logs
+        match /attendanceLogs/{logId} {
+           allow read: if isStaffOf(schoolId);
+           allow create, update: if isAdmin() || (isStaffOf(schoolId) && isReceptionOf(schoolId));
+           allow delete: if isAdmin();
+        }
+      }
+
+      // Classes Subcollection
+      match /classes/{classId} {
+        allow read: if isStaffOf(schoolId);
+        allow create, update: if isAdmin() || (isStaffOf(schoolId) && isReceptionOf(schoolId));
+        allow delete: if isAdmin();
+      }
+
+      // Face Data (Recognition Data)
+      match /faceData/{docId} {
+        allow read: if isStaffOf(schoolId);
+        allow write: if isAdmin() || (isStaffOf(schoolId) && isReceptionOf(schoolId));
+      }
+
+      // Face Data Metadata (Version tracking for cache)
+      match /faceDataMeta/{docId} {
+        allow read: if isAuthenticated();  // All authenticated users can check version
+        allow write: if isAdmin();         // Only admins can update version
+      }
+
+      // Login Pictures
+      match /login-pictures/{docId} {
+        allow read: if isStaffOf(schoolId);
+        allow write: if isAdmin() || isStaffOf(schoolId);
+      }
+
+      // WhatsApp Queue (Subcollection under schools)
+      match /whatsapp-queue/{messageId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();  // Any authenticated user can queue messages
+        allow update: if false; // Only Cloud Functions can update
+        allow delete: if isAdmin();
+      }
+
+      // WhatsApp Logs (Subcollection under schools)
+      match /whatsapp-logs/{logId} {
+        allow read: if isStaffOf(schoolId);
+        allow create: if false; // Only Cloud Functions can create
+        allow update, delete: if false;
+      }
+    }
+    
+    // ============================================================
+    // Roles Admin (Legacy - disabled)
+    // ============================================================
+    match /roles_admin/{userId} {
+       allow read: if false;
+       allow write: if false;
+    }
+
+    // ============================================================
+    // WhatsApp Configuration (Global)
+    // ============================================================
+    
+    // WhatsApp settings - admin only can read/write
+    match /whatsapp_settings/{document=**} {
+      allow read: if isAdmin();
+      allow write: if isGlobalAdmin();
+    }
+  }
+}

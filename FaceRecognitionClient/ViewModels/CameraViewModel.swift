@@ -616,19 +616,31 @@ class CameraViewModel: ObservableObject {
     /// Save login picture to Firestore for parent verification
     /// Called when user confirms result (WhatsApp, Next Capture, Lock, Auto-Lock)
     private func saveLoginPictureIfSuccess() async {
+        print("🔍 saveLoginPictureIfSuccess() called")
+
         // Only save for successful matches
         guard case .success = status else {
+            print("⚠️ Cannot save login picture: status is not .success (current: \(status))")
             return
         }
+
+        print("✅ Status is .success")
 
         // Ensure we have captured image and matched student
         guard let image = capturedImage,
             let studentId = matchedStudentId,
             let schoolId = school?.id
         else {
-            print("⚠️ Cannot save login picture: missing image, studentId, or schoolId")
+            print("⚠️ Cannot save login picture: missing data")
+            print("   - capturedImage: \(capturedImage != nil ? "✓" : "✗")")
+            print("   - matchedStudentId: \(matchedStudentId ?? "nil")")
+            print("   - school?.id: \(school?.id ?? "nil")")
             return
         }
+
+        print("✅ All required data present - proceeding to save")
+        print("   - studentId: \(studentId)")
+        print("   - schoolId: \(schoolId)")
 
         // Save picture in background
         Task.detached { [weak self] in
@@ -696,58 +708,141 @@ class CameraViewModel: ObservableObject {
 
     /// Perform popup auto-lock - close popup and lock camera
     private func performPopupAutoLock() {
+        print("⏱️ performPopupAutoLock() called - Auto-lock timeout triggered")
+
         cancelPopupAutoLockTimer()
 
-        // Save login picture for parent verification (if successful match)
+        // Save login picture for parent verification BEFORE clearing state
         Task {
             await saveLoginPictureIfSuccess()
+
+            // Clear state AFTER saving picture
+            await MainActor.run {
+                // Close popup
+                self.showResultPopup = false
+                self.isPaused = false
+                self.capturedImage = nil
+                self.showFaceBox = false
+                self.isComparing = false
+                self.matchedStudentId = nil  // Clear matched student
+
+                // Lock camera (same as manual lock)
+                self.stopCamera()
+                self.isCameraStarted = false
+                self.status = .scanning
+
+                print("🔒 Popup auto-locked due to inactivity")
+            }
         }
-
-        // Close popup
-        showResultPopup = false
-        isPaused = false
-        capturedImage = nil
-        showFaceBox = false
-        isComparing = false
-        matchedStudentId = nil  // Clear matched student
-
-        // Lock camera (same as manual lock)
-        stopCamera()
-        isCameraStarted = false
-        status = .scanning
-
-        print("🔒 Popup auto-locked due to inactivity")
     }
 
-    /// User confirmed result, resume camera capture
-    func confirmAndResume() {
+    /// User clicked WhatsApp Parent button - send notification and resume
+    func sendWhatsAppAndResume() {
+        print("📱 sendWhatsAppAndResume() called - User clicked WhatsApp Parent")
+
         // Cancel popup auto-lock timer
         cancelPopupAutoLockTimer()
 
-        // Save login picture for parent verification (if successful match)
+        // Save login picture for parent verification BEFORE clearing state
         Task {
             await saveLoginPictureIfSuccess()
+
+            // Send WhatsApp notification if we have the required data
+            await MainActor.run {
+                if case .success = self.status,
+                    let studentId = self.matchedStudentId,
+                    let schoolId = self.school?.id,
+                    let parentPhone = self.matchedParentPhone,
+                    !parentPhone.isEmpty
+                {
+
+                    print("📱 Sending WhatsApp notification...")
+
+                    // Send WhatsApp notification asynchronously
+                    WhatsAppNotificationService.shared.sendNotificationForStudent(
+                        studentId: studentId,
+                        schoolId: schoolId,
+                        timestamp: Date()
+                    ) { result in
+                        switch result {
+                        case .success(let queueId):
+                            print("✅ WhatsApp notification queued successfully: \(queueId)")
+                            Task { @MainActor in
+                                await self.addLog("📲 WhatsApp sent to parent")
+                            }
+                        case .failure(let error):
+                            print("❌ WhatsApp notification failed: \(error.localizedDescription)")
+                            Task { @MainActor in
+                                await self.addLog("⚠️ WhatsApp send failed")
+                            }
+                        }
+                    }
+                } else {
+                    print("⚠️ Cannot send WhatsApp: missing required data")
+                    if self.matchedParentPhone == nil || self.matchedParentPhone?.isEmpty == true {
+                        print("   - No parent phone number available")
+                    }
+                }
+            }
+
+            // Clear state AFTER saving picture and queueing WhatsApp
+            await MainActor.run {
+                self.showResultPopup = false
+                self.isPaused = false
+                self.capturedImage = nil
+                self.status = .scanning
+                self.showFaceBox = false
+                self.isComparing = false
+                self.matchedStudentId = nil
+                self.matchedParentPhone = nil  // Clear parent phone
+
+                // Ensure camera session is running
+                if self.isCameraReady {
+                    self.cameraService.startSession()
+                }
+
+                print("🔄 Resumed camera from popup")
+
+                // Start auto-lock timer if enabled
+                self.startAutoLockTimer()
+            }
         }
+    }
 
-        showResultPopup = false
-        isPaused = false
-        capturedImage = nil  // Clear captured image
-        status = .scanning
-        showFaceBox = false
-        isComparing = false
-        matchedStudentId = nil  // Clear matched student
-        // Don't clear the log - keep history for review
-        // statusLog.removeAll()
+    /// User confirmed result, resume camera capture (Next Capture button)
+    func confirmAndResume() {
+        print("📱 confirmAndResume() called - User clicked Next Capture")
 
-        // Ensure camera session is running
-        if isCameraReady {
-            cameraService.startSession()
+        // Cancel popup auto-lock timer
+        cancelPopupAutoLockTimer()
+
+        // Save login picture for parent verification BEFORE clearing state
+        // Must be done synchronously to ensure status and matchedStudentId are still available
+        Task {
+            await saveLoginPictureIfSuccess()
+
+            // Clear state AFTER saving picture
+            await MainActor.run {
+                self.showResultPopup = false
+                self.isPaused = false
+                self.capturedImage = nil  // Clear captured image
+                self.status = .scanning
+                self.showFaceBox = false
+                self.isComparing = false
+                self.matchedStudentId = nil  // Clear matched student
+                self.matchedParentPhone = nil  // Clear parent phone
+
+                // Ensure camera session is running
+                if self.isCameraReady {
+                    self.cameraService.startSession()
+                }
+
+                print("🔄 Resumed camera from popup")
+
+                // Start auto-lock timer if enabled
+                self.startAutoLockTimer()
+            }
         }
-
-        print("🔄 Resumed camera from popup")
-
-        // Start auto-lock timer if enabled
-        startAutoLockTimer()
     }
 
     // MARK: - Auto Lock
@@ -835,40 +930,45 @@ class CameraViewModel: ObservableObject {
 
     /// Manual lock from popup - user wants to lock from result popup
     func manualLockFromPopup() {
+        print("🔒 manualLockFromPopup() called - User clicked Screen-Lock")
+
         // Cancel popup auto-lock timer
         cancelPopupAutoLockTimer()
-
-        // Save login picture for parent verification (if successful match)
-        Task {
-            await saveLoginPictureIfSuccess()
-        }
 
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
 
-        // Close popup and reset state
-        showResultPopup = false
-        isPaused = false
-        capturedImage = nil
-        showFaceBox = false
-        isComparing = false
-        matchedStudentId = nil  // Clear matched student
+        // Save login picture for parent verification BEFORE clearing state
+        Task {
+            await saveLoginPictureIfSuccess()
 
-        // Stop camera
-        stopCamera()
+            // Clear state AFTER saving picture
+            await MainActor.run {
+                // Close popup and reset state
+                self.showResultPopup = false
+                self.isPaused = false
+                self.capturedImage = nil
+                self.showFaceBox = false
+                self.isComparing = false
+                self.matchedStudentId = nil  // Clear matched student
 
-        // Reset to initial state (before camera started)
-        isCameraStarted = false
-        isCameraReady = false
-        status = .scanning
+                // Stop camera
+                self.stopCamera()
 
-        // Add log entry
-        let timestamp = DateFormatter.localizedString(
-            from: Date(), dateStyle: .none, timeStyle: .medium)
-        statusLog.append("[\(timestamp)] 🔒 Screen locked (manual)")
+                // Reset to initial state (before camera started)
+                self.isCameraStarted = false
+                self.isCameraReady = false
+                self.status = .scanning
 
-        print("🔒 Manual screen lock from popup")
+                // Add log entry
+                let timestamp = DateFormatter.localizedString(
+                    from: Date(), dateStyle: .none, timeStyle: .medium)
+                self.statusLog.append("[\(timestamp)] 🔒 Screen locked (manual)")
+
+                print("🔒 Manual screen lock from popup")
+            }
+        }
     }
 
     private func handleSuccessfulMatch(_ match: FaceMatchResult) async {

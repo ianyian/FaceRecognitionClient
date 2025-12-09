@@ -70,11 +70,11 @@ This feature references the "main-tuition-center" Firestore structure, which alr
 
 ## Testing
 To test this feature:
-1. Login with demo01/helloworld (select dem01 school)
+1. Login with demo01/helloworld (select demo01 school)
 2. Load Face Data from Settings
 3. Capture a student's face
 4. After successful match, click any button (WhatsApp, Next Capture, or Lock)
-5. Check Firestore: `/schools/dem01/login-pictures/` should contain the saved picture
+5. Check Firestore: `/schools/demo01/login-pictures/` should contain the saved picture
 6. Verify document contains: studentId, imageData, capturedAt, timestamp
 
 ## Notes

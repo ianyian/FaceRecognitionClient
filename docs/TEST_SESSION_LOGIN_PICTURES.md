@@ -11,7 +11,7 @@
 2. [ ] Open Xcode Console (View → Debug Area → Show Debug Area)
 3. [ ] Open Firebase Console in browser
 4. [ ] Navigate to Firestore Database
-5. [ ] Locate school "dem01" in the schools collection
+5. [ ] Locate school "demo01" in the schools collection
 
 ## Test Procedure
 

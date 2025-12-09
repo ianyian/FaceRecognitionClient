@@ -8,7 +8,7 @@
 - [x] 5 screenshots captured (1320 x 2868)
 - [x] Privacy policy hosted: https://ianyian.github.io/FaceRecognitionClient/privacy.html
 - [x] Support page hosted: https://ianyian.github.io/FaceRecognitionClient/support.html
-- [x] Demo account created: demo01 / helloworld / dem01
+- [x] Demo account created: demo01 / helloworld / demo01
 - [x] Test students created (5 students)
 - [x] App description written (see APP_STORE_DESCRIPTION.md)
 

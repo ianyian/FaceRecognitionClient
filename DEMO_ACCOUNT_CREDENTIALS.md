@@ -11,7 +11,7 @@ Copy the text below into **App Store Connect → App Review Information → Note
 ```
 Email/Username: demo01
 Password: helloworld
-School Selection: dem01
+School Selection: demo01
 ```
 
 ## Login Instructions for Apple Reviewers
@@ -22,7 +22,7 @@ School Selection: dem01
 2. On the login screen, enter:
    - **Email/Username:** `demo01`
    - **Password:** `helloworld`
-3. When prompted to select a school, choose **"dem01"** from the dropdown
+3. When prompted to select a school, choose **"demo01"** from the dropdown
 4. Tap "Login" button
 5. **IMPORTANT:** When the app loads, you may see a prompt or button to **"Load Latest Face Data"** or **"Sync Face Data"**
    - **Please tap this button** to download the face recognition data for the 5 test students
@@ -35,12 +35,12 @@ School Selection: dem01
 The demo account includes **5 pre-enrolled test students** for face recognition testing:
 - Students have been created through the CoMa (Configuration Manager) web application
 - Face data is available for recognition testing
-- All students are associated with the "dem01" school
+- All students are associated with the "demo01" school
 
 ## Features to Test
 
 ✓ **Secure Authentication** - Login with demo01 credentials  
-✓ **School Selection** - Select dem01 from school dropdown  
+✓ **School Selection** - Select demo01 from school dropdown  
 ✓ **Face Recognition** - Camera-based student identification  
 ✓ **Attendance Logging** - Automatic attendance recording  
 ✓ **Student Profiles** - View enrolled students  

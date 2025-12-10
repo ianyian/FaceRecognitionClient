@@ -23,7 +23,7 @@ Last Updated: December 9, 2025
 
 **STREAMLINE YOUR SCHOOL ATTENDANCE WITH AI-POWERED FACE RECOGNITION**
 
-FaceAttend revolutionizes school attendance tracking with secure, contactless face recognition technology. Designed specifically for schools and educational institutions, our app makes student check-in fast, accurate, and parent-friendly.
+Attend revolutionizes school attendance tracking with secure, contactless face recognition technology. Designed specifically for schools and educational institutions, our app makes student check-in fast, accurate, and parent-friendly.
 
 **KEY FEATURES:**
 
